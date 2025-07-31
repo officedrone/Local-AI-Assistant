@@ -8,9 +8,10 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 
 ## Requirements
 
-- A running local LLM API endpoint
-- VS Code version `1.70.0` or newer
-- Network access to your model service (localhost or LAN)
+- A running local LLM API endpoint such as [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.com/), [KoboldCpp](https://github.com/LostRuins/koboldcpp), or [Oobabooga](https://github.com/oobabooga/text-generation-webui/releases)
+- Network access to said endpoint (localhost or LAN)
+- VS Code version `1.90.0` or newer
+
 
 ---
 
