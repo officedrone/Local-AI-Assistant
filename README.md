@@ -19,7 +19,7 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 ### Idle Tooltip Suggestions  
 Shows contextual tooltips when idle, including quick links and actions.
 
-![Tooltip Demo](https://github.com/officedrone/local-ai-assistant/media/readme-tooltip.gif)
+![Tooltip Demo](https://github.com/officedrone/Local-AI-Assistant/blob/main/media/readme-tooltip.gif)
 
 
 
@@ -29,7 +29,7 @@ Autocompletes the current line or selection using your configured LLM.
 - Windows: `Ctrl + Shift + Alt + Enter`  
 - macOS: `Cmd + Shift + Alt + Enter`  
 
-![Complete Code Demo](https://github.com/officedrone/local-ai-assistant/media/readme-complete-code.gif)
+![Complete Code Demo](https://github.com/officedrone/Local-AI-Assistant/blob/main/media/readme-complete-code.gif)
 
 
 
@@ -39,7 +39,7 @@ Checks and validates selected code (or entire file if nothing is selected).
 - Windows: `Ctrl + Shift + Alt + V`  
 - macOS: `Cmd + Shift + Alt + V`
 
-![Validate Code Demo](https://github.com/officedrone/local-ai-assistant/media/readme-validate-code.gif)
+![Validate Code Demo](https://github.com/officedrone/Local-AI-Assistant/blob/main/media/readme-validate-code.gif)
 
 
 
@@ -56,7 +56,7 @@ Quickly access and configure settings like endpoint, model, and behavior.
 
 - Trigger via command palette: `Local AI Assistant – Open Settings`
 
-![Settings Demo](https://github.com/officedrone/local-ai-assistant/media/readme-settings.gif)
+![Settings Demo](https://github.com/officedrone/Local-AI-Assistant/blob/main/media/readme-settings.gif)
 
 
 
