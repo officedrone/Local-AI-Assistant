@@ -1,0 +1,158 @@
+{
+  "name": "local-ai-assistant",
+  "displayName": "Local-AI-Assistant",
+  "description": "A VS Code extension that interacts with a LLM API endpoint on your network",
+  "publisher": "officedrone",
+  "icon": "media/icon.png",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/officedrone/local-ai-assistant"
+  },
+  "bugs": {
+    "url": "https://github.com/officedrone/local-ai-assistant/issues"
+  },
+  "engines": {
+    "vscode": ">=1.90.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.completeCurrentLine",
+        "title": "Local AI Assistant – Auto Complete Code",
+        "icon": {
+          "dark": "",
+          "light": ""
+        }
+      },
+      {
+        "command": "extension.openChatPanel",
+        "title": "Local AI Assistant – Open Chat Panel",
+        "icon": {
+          "dark": "",
+          "light": ""
+        }
+      },
+      {
+        "command": "extension.validateCodeAction",
+        "title": "Local AI Assistant – Validate Code",
+        "icon": {
+          "dark": "",
+          "light": ""
+        }
+      },
+      {
+        "command": "extension.openSettingsPanel",
+        "title": "Local AI Assistant – Open Settings"
+      },
+      {
+        "command": "extension.setApiKey",
+        "title": "Local AI Assistant: Set API Key"
+      },
+      {
+        "command": "extension.selectModel",
+        "title": "Local AI Assistant – Select Model"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "extension.selectModel",
+        "key": "ctrl+shift+alt+m",
+        "mac": "cmd+shift+alt+m",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.completeCurrentLine",
+        "key": "ctrl+shift+alt+enter",
+        "mac": "cmd+shift+alt+enter",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.openChatPanel",
+        "key": "ctrl+shift+alt+c",
+        "mac": "cmd+shift+alt+c",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.validateCodeAction",
+        "key": "ctrl+shift+alt+v",
+        "mac": "cmd+shift+alt+v",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "extension.setApiKey",
+        "key": "ctrl+shift+alt+k",
+        "mac": "cmd+shift+alt+k"
+      }
+    ],
+    "configuration": {
+      "title": "Local AI Assistant",
+      "properties": {
+        "localAIAssistant.apiType": {
+          "type": "string",
+          "enum": [
+            "OpenAI",
+            "Ollama"
+          ],
+          "default": "OpenAI",
+          "description": "Choose the type of API to interact with — OpenAI or Ollama (upcoming – not supported yet)."
+        },
+        "localAIAssistant.endpoint": {
+          "type": "string",
+          "default": "http://localhost:1234/v1",
+          "description": "Endpoint URL for your local LLM API."
+        },
+        "localAIAssistant.apiAuthRequired": {
+          "type": "boolean",
+          "default": false,
+          "description": "Press `Ctrl+Shift+Alt+K` to securely enter your key via the Command Palette."
+        },
+        "localAIAssistant.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model to use for completions and chat requests if your service requires it. e.g., 'qwen2.5-coder-7b-instruct', etc."
+        },
+        "localAIAssistant.enableExtensionTooltip": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable extension tooltip in the main code editor"
+        },
+        "localAIAssistant.idleTooltipDelay": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 500,
+          "description": "Delay in milliseconds before showing the auto-complete tooltip."
+        },
+        "localAIAssistant.includeFileContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, include the full file text as context for code requests."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "axios": "^1.4.0"
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "@vscode/test-cli": "^0.0.11",
+    "eslint": "^9.25.1",
+    "typescript": "^5.8.3"
+  }
+}
