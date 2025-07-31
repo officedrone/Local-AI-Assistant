@@ -20,7 +20,7 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 ### Idle Tooltip Suggestions  
 Shows contextual tooltips when idle, including quick links and actions.
 
-![Tooltip Demo](https://raw.githubusercontent.com/officedrone/Local-AI-Assistant/refs/heads/main/media/readme-tooltip.gif)
+![Tooltip Demo](./media/readme-tooltip.gif)
 
 
 
@@ -30,7 +30,7 @@ Autocompletes the current line or selection using your configured LLM.
 - Windows: `Ctrl + Shift + Alt + Enter`  
 - macOS: `Cmd + Shift + Alt + Enter`  
 
-![Complete Code Demo](https://raw.githubusercontent.com/officedrone/Local-AI-Assistant/refs/heads/main/media/readme-complete-code.gif)
+![Complete Code Demo](./media/readme-complete-code.gif)
 
 
 
@@ -40,7 +40,7 @@ Checks and validates selected code (or entire file if nothing is selected).
 - Windows: `Ctrl + Shift + Alt + V`  
 - macOS: `Cmd + Shift + Alt + V`
 
-![Validate Code Demo](https://raw.githubusercontent.com/officedrone/Local-AI-Assistant/refs/heads/main/media/readme-validate-code.gif)
+![Validate Code Demo](./media/readme-validate-code.gif)
 
 
 
@@ -57,7 +57,7 @@ Quickly access and configure settings like endpoint, model, and behavior.
 
 - Trigger via command palette: `Local AI Assistant – Open Settings`
 
-![Settings Demo](https://raw.githubusercontent.com/officedrone/Local-AI-Assistant/refs/heads/main/media/readme-settings.gif)
+![Settings Demo](./media/readme-settings.gif)
 
 
 

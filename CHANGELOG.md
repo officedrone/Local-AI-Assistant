@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.0.2 – Initial Release
+
+- formatting updates for publishing in marketplace
+
 
 ## 0.0.1 – Initial Release
 
