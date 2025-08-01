@@ -1,6 +1,14 @@
 # Change Log
 
-## 0.0.2 – Initial Release
+## 0.0.3 – Tooltip Tweaks
+
+- tweak tooltip agressiveness; 
+- add tooltip disable button to tooltip; 
+- update readme; 
+- update chatpanel size
+
+
+## 0.0.2 – Prep for publishing to marketplace
 
 - formatting updates for publishing in marketplace
 
