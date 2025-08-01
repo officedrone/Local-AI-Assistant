@@ -45,7 +45,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
   vscode.commands.executeCommand('vscode.setEditorLayout', {
     orientation: 0,
-    groups: [{ size: 3 }, { size: 1 }],
+    groups: [{ size: 2 }, { size: 1 }],
   });
 
   chatPanel = vscode.window.createWebviewPanel(

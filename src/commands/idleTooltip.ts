@@ -21,7 +21,10 @@ export function setupIdleTooltip(context: vscode.ExtensionContext) {
           ' | ' +
           '[Validate Code](command:extension.validateCodeAction)' +
           ' | ' +
-          '[$(gear)](command:extension.openSettingsPanel)'
+          '[$(gear)](command:extension.openSettingsPanel)' + 
+          ' | ' +
+          '[$(eye-closed)](command:extension.disableIdleTooltip)'
+
         );
         md.isTrusted = true;
         md.supportThemeIcons = true;
@@ -49,10 +52,10 @@ export function setupIdleTooltip(context: vscode.ExtensionContext) {
         return;
       }
 
+      // set tooltip position and show
       hoverPosition = editor.selection.active;
       tooltipVisible = true;
       vscode.commands.executeCommand('editor.action.showHover');
-
       const clearDelay = cfg.get<number>(CONFIG.clearKey, 4000);
       clearTimeout(clearTimer);
       clearTimer = setTimeout(hideTooltip, clearDelay);
@@ -60,13 +63,12 @@ export function setupIdleTooltip(context: vscode.ExtensionContext) {
   }
 
   function hideTooltip() {
-    if (!tooltipVisible) 
-      {
-        return;
-      }
+    if (!tooltipVisible) {
+      return;
+    }
+    // reset visibility and position
     tooltipVisible = false;
     hoverPosition = null;
-    vscode.commands.executeCommand('editor.action.showHover');
   }
 
   function reset() {
@@ -74,7 +76,7 @@ export function setupIdleTooltip(context: vscode.ExtensionContext) {
     clearTimeout(idleTimer);
     clearTimeout(clearTimer);
     hideTooltip();
-
+    
     // only re-schedule if tooltip is enabled
     const enabled = vscode.workspace
       .getConfiguration(CONFIG.section)
@@ -89,7 +91,9 @@ export function setupIdleTooltip(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeTextDocument(reset),
     vscode.window.onDidChangeTextEditorSelection(reset),
     vscode.window.onDidChangeActiveTextEditor(reset),
-    { dispose: () => {
+    {
+      dispose: () => {
+        // cleanup on dispose
         clearTimeout(idleTimer);
         clearTimeout(clearTimer);
       }
@@ -110,6 +114,19 @@ export function setupIdleTooltip(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(openSettingsCmd);
+
+  // disable tooltip command
+  const disableTooltipCmd = vscode.commands.registerCommand(
+    'extension.disableIdleTooltip',
+    async () => {
+      await vscode.workspace.getConfiguration(CONFIG.section)
+        .update(CONFIG.enableTooltipKey, false, vscode.ConfigurationTarget.Global);
+
+      hideTooltip();
+      vscode.window.showInformationMessage('Idle Tooltip has been disabled.You can re-enable it in Settings');
+    }
+  );
+  context.subscriptions.push(disableTooltipCmd);
 
   // kick off the first schedule
   reset();

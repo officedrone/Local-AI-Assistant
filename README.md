@@ -5,7 +5,6 @@
 
 A Visual Studio Code extension that connects to a local LLM (Large Language Model) API endpoint and provides code completion, validation, and query-via-chat functionality. Perfect for developers using private or offline models running on their workstation or on the local network.
 
-
 ## Requirements
 
 - A running local LLM API endpoint such as [LM Studio](https://lmstudio.ai/), [Ollama](https://ollama.com/), [KoboldCpp](https://github.com/LostRuins/koboldcpp), or [Oobabooga](https://github.com/oobabooga/text-generation-webui/releases)
@@ -17,22 +16,10 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 
 ## Features
 
-### Idle Tooltip Suggestions  
+### Idle Tooltip
 Shows contextual tooltips when idle, including quick links and actions.
 
 ![Tooltip Demo](./media/readme-tooltip.gif)
-
-
-
-### Auto-Complete Code  
-Autocompletes the current line or selection using your configured LLM.
-
-- Windows: `Ctrl + Shift + Alt + Enter`  
-- macOS: `Cmd + Shift + Alt + Enter`  
-
-![Complete Code Demo](./media/readme-complete-code.gif)
-
-
 
 ### Validate Code Block  
 Checks and validates selected code (or entire file if nothing is selected).
@@ -42,7 +29,16 @@ Checks and validates selected code (or entire file if nothing is selected).
 
 ![Validate Code Demo](./media/readme-validate-code.gif)
 
+### Auto-Complete Code in Chat
+Autocompletes the current line or selection in chat using your configured LLM.
 
+- Windows: `Ctrl + Shift + Alt + Enter`  
+- macOS: `Cmd + Shift + Alt + Enter`  
+
+![Complete Code Demo](./media/readme-complete-code.gif)
+
+### Auto-Complete Code In-line
+- `Coming soon`
 
 ### Open Chat Panel  
 Launches an interactive chat interface for general-purpose LLM interaction.
@@ -50,7 +46,7 @@ Launches an interactive chat interface for general-purpose LLM interaction.
 - Windows: `Ctrl + Shift + Alt + C`  
 - macOS: `Cmd + Shift + Alt + C`
 
-
+![Chat Demo](./media/readme-chat-in-context.gif)
 
 ### Open Settings Panel  
 Quickly access and configure settings like endpoint, model, and behavior.
@@ -110,25 +106,10 @@ Accessible via:
 
 ## Known Issues
 
-- Ollama support limited
+- Ollama support is limited
 - API Key is optional and usage applies to OpenAI-based back-ends only 
 - Temporary freeze possible if endpoint is unreachable during stream
 - Auto-scroll can be wonky
-
----
-
-## Release Notes
-
-### 0.0.1 – Initial Release
-
-- Chat panel with markdown rendering and code streaming  
-- Code validation command
-- Code completion command  
-- Idle-based tooltip with hover interaction  
-- Configurable API endpoint 
-- New secure API key setup command  
-- Model selection interface  
-- Extension settings panel command
 
 ---
 
