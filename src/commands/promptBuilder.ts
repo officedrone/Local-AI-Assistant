@@ -1,5 +1,6 @@
 // src/commands/promptBuilder.ts
 
+import * as vscode from 'vscode';
 import {
   validationPrompt,
   completionPrompt,
@@ -10,9 +11,22 @@ import {
 export type PromptMode = 'validate' | 'complete' | 'chat';
 
 export interface PromptContext {
-  code: string;         // input text or selected code
+  code: string;
   mode: PromptMode;
-  fileContext?: string; // full text of open file, if "Include file context" is checked
+  fileContext?: string;
+  language?: string;
+}
+
+/**
+ * Detect the active document's programming language using VS Code API.
+ */
+export async function getLanguage(): Promise<string> {
+  const editor = vscode.window.activeTextEditor;
+  if (editor) {
+    return editor.document.languageId;
+  } else {
+    throw new Error('No active editor found');
+  }
 }
 
 /**
@@ -24,45 +38,41 @@ export interface PromptContext {
 export function buildChatMessages({
   code,
   mode,
-  fileContext
+  fileContext,
+  language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   // 1) Build the base system prompt
   let systemPrompt: string;
 
   if (mode === 'chat') {
-    systemPrompt = 
-      'You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code block unless the user requests the full file.';
+    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code blocks unless the user requests the full file. The language in use is ${language}.`;
   } else if (mode === 'validate') {
-    systemPrompt = validationPrompt(code, fileContext);
+    systemPrompt = validationPrompt(code, fileContext, language);
   } else {
-    systemPrompt = completionPrompt(code, fileContext);
+    systemPrompt = completionPrompt(code, fileContext, language);
   }
 
-  // 2) If fileContext is provided, append it for richer context
+  // 2) Append file context if provided
   if (fileContext) {
-    systemPrompt = systemPrompt.trim() +
-      '\n\nHere is the content of the currently open file for context:\n' +
-      '```\n' +
+    systemPrompt += '\n\nHere is the content of the currently open file for context:\n' +
+      `\`\`\`${language}\n` +
       fileContext.trim() +
       '\n```';
   }
-
-  // Trim final system prompt
-  systemPrompt = systemPrompt.trim();
 
   // 3) Build the user prompt
   let userPrompt: string;
   if (mode === 'chat') {
     userPrompt = code.trim();
   } else if (mode === 'validate') {
-    userPrompt = userValidationMessage(code).trim();
+    userPrompt = userValidationMessage(code, language);
   } else {
-    userPrompt = userCompletionMessage(code).trim();
+    userPrompt = userCompletionMessage(code, language);
   }
 
   // 4) Return the two-message array
   return [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: systemPrompt.trim() },
     { role: 'user',   content: userPrompt }
   ];
 }
