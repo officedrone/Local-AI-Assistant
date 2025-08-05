@@ -23,27 +23,15 @@
     "commands": [
       {
         "command": "extension.completeCurrentLine",
-        "title": "Local AI Assistant – Auto Complete Code",
-        "icon": {
-          "dark": "",
-          "light": ""
-        }
+        "title": "Local AI Assistant – Auto Complete Code"
       },
       {
         "command": "extension.openChatPanel",
-        "title": "Local AI Assistant – Open Chat Panel",
-        "icon": {
-          "dark": "",
-          "light": ""
-        }
+        "title": "Local AI Assistant – Open Chat Panel"
       },
       {
         "command": "extension.validateCodeAction",
-        "title": "Local AI Assistant – Validate Code",
-        "icon": {
-          "dark": "",
-          "light": ""
-        }
+        "title": "Local AI Assistant – Validate Code"
       },
       {
         "command": "extension.openSettingsPanel",
@@ -58,6 +46,7 @@
         "title": "Local AI Assistant – Select Model"
       }
     ],
+
     "keybindings": [
       {
         "command": "extension.selectModel",
@@ -85,15 +74,44 @@
         "mac": "cmd+shift+alt+k"
       }
     ],
+
+    "submenus": [
+      {
+        "id": "localAI.submenu",
+        "label": "Local AI Assistant"
+      }
+    ],
+
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "localAI.submenu",
+          "group": "LocalAIAssistant@1"
+        }
+      ],
+
+      "localAI.submenu": [
+        {
+          "command": "extension.openChatPanel",
+          "group": "1"
+        },
+        {
+          "command": "extension.validateCodeAction",
+          "group": "2"
+        },
+        {
+          "command": "extension.completeCurrentLine",
+          "group": "3"
+        }
+      ]
+    },
+
     "configuration": {
       "title": "Local AI Assistant",
       "properties": {
         "localAIAssistant.apiType": {
           "type": "string",
-          "enum": [
-            "OpenAI",
-            "Ollama"
-          ],
+          "enum": ["OpenAI", "Ollama"],
           "default": "OpenAI",
           "description": "Choose the type of API to interact with — OpenAI or Ollama (upcoming – not supported yet)."
         },
@@ -110,7 +128,7 @@
         "localAIAssistant.model": {
           "type": "string",
           "default": "",
-          "description": "Model to use for completions and chat requests if your service requires it. e.g., 'qwen2.5-coder-7b-instruct', etc."
+          "description": "Model to use for completions and chat requests if your service requires it (e.g., qwen2.5-coder-7b-instruct)."
         },
         "localAIAssistant.enableExtensionTooltip": {
           "type": "boolean",
@@ -126,7 +144,7 @@
         "localAIAssistant.includeFileContext": {
           "type": "boolean",
           "default": true,
-          "description": "When enabled, include the full file text as context for code requests."
+          "description": "Include the full file text as context for code requests."
         }
       }
     }
