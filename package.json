@@ -23,27 +23,33 @@
     "commands": [
       {
         "command": "extension.completeCurrentLine",
-        "title": "Local AI Assistant – Auto Complete Code"
+        "title": "Complete Code",
+        "category": "Local AI Assistant"
       },
       {
         "command": "extension.openChatPanel",
-        "title": "Local AI Assistant – Open Chat Panel"
+        "title": "Open Chat",
+        "category": "Local AI Assistant"
       },
       {
         "command": "extension.validateCodeAction",
-        "title": "Local AI Assistant – Validate Code"
+        "title": "Validate Code",
+        "category": "Local AI Assistant"
       },
       {
         "command": "extension.openSettingsPanel",
-        "title": "Local AI Assistant – Open Settings"
+        "title": "Open Settings",
+        "category": "Local AI Assistant"
       },
       {
         "command": "extension.setApiKey",
-        "title": "Local AI Assistant: Set API Key"
+        "title": "Set API Key",
+        "category": "Local AI Assistant"
       },
       {
         "command": "extension.selectModel",
-        "title": "Local AI Assistant – Select Model"
+        "title": "Select Model",
+        "category": "Local AI Assistant"
       }
     ],
 
@@ -92,16 +98,13 @@
 
       "localAI.submenu": [
         {
-          "command": "extension.openChatPanel",
-          "group": "1"
+          "command": "extension.openChatPanel"
         },
         {
-          "command": "extension.validateCodeAction",
-          "group": "2"
+          "command": "extension.validateCodeAction"
         },
         {
-          "command": "extension.completeCurrentLine",
-          "group": "3"
+          "command": "extension.completeCurrentLine"
         }
       ]
     },
