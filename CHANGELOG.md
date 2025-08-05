@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.0.4 – Context menu and language auto-detect
+
+- leverage VS Code language auto-detect and embed detected language in prompts
+- added right-click menu in editor for complete code, validate code, open chat window
+- prompt enhancements
+
 ## 0.0.3 – Tooltip Tweaks
 
 - tweak tooltip agressiveness; 
