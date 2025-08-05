@@ -11,17 +11,16 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 - Network access to said endpoint (localhost or LAN)
 - VS Code version `1.90.0` or newer
 
-
 ---
 
-## Features
+## Features List
+- Code validation / Code completion in chat
+- Code completion (in-line) - Coming soon
+- Tooltip / Right-click menu with extension commands
+- File context (multiple files coming soon) / Language auto-detection
+- Chat / Extension Settings UI
 
-### Idle Tooltip
-Shows contextual tooltips when idle, including quick links and actions.
-
-![Tooltip Demo](./media/readme-tooltip.gif)
-
-### Validate Code Block  
+## Validate Code Block  
 Checks and validates selected code (or entire file if nothing is selected).
 
 - Windows: `Ctrl + Shift + Alt + V`  
@@ -29,7 +28,7 @@ Checks and validates selected code (or entire file if nothing is selected).
 
 ![Validate Code Demo](./media/readme-validate-code.gif)
 
-### Auto-Complete Code in Chat
+## Auto-Complete Code in Chat
 Autocompletes the current line or selection in chat using your configured LLM.
 
 - Windows: `Ctrl + Shift + Alt + Enter`  
@@ -37,10 +36,10 @@ Autocompletes the current line or selection in chat using your configured LLM.
 
 ![Complete Code Demo](./media/readme-complete-code.gif)
 
-### Auto-Complete Code In-line
+## Auto-Complete Code In-line
 - `Coming soon`
 
-### Open Chat Panel  
+## Open Chat Panel  
 Launches an interactive chat interface for general-purpose LLM interaction.
 
 - Windows: `Ctrl + Shift + Alt + C`  
@@ -48,7 +47,7 @@ Launches an interactive chat interface for general-purpose LLM interaction.
 
 ![Chat Demo](./media/readme-chat-in-context.gif)
 
-### Open Settings Panel  
+## Open Settings Panel  
 Quickly access and configure settings like endpoint, model, and behavior.
 
 - Trigger via command palette: `Local AI Assistant – Open Settings`
@@ -56,8 +55,18 @@ Quickly access and configure settings like endpoint, model, and behavior.
 ![Settings Demo](./media/readme-settings.gif)
 
 
+## Editor menu with extension commands
+Right-click to quickly access the extension's commands (useful if you want to disable the tooltip)
 
-### Set API Key
+![Menu Screenshot](./media/readme-menu.png)
+
+## Idle Tooltip with extension commands
+Shows contextual tooltips when idle, including quick links and actions.
+
+![Tooltip Demo](./media/readme-tooltip.gif)
+
+
+## API Key Support
 Store an API key securely for authenticated LLM endpoints.
 NOTE: This setting VS Code secure secrets storage API and does **not** store the key in settings.json 
 
@@ -66,7 +75,7 @@ NOTE: This setting VS Code secure secrets storage API and does **not** store the
 
 
 
-### Select LLM Model  
+## Select LLM Model  
 Pick a model from your configured service if required (e.g. Qwen, Mistral, etc).
 
 - Windows: `Ctrl + Shift + Alt + M`  
@@ -98,7 +107,6 @@ Accessible via:
 
 - Inline completion
 - Status indicator for LLM service
-- Right-click context menu
 - Token limit/character warnings
 - Smart usage/embedding of current file in context
 - SSL Validation
