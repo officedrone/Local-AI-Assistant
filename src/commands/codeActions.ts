@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { buildChatMessages, getLanguage } from './promptBuilder';
 import { getOrCreateChatPanel } from './chatPanel';
 import { routeChatRequest } from '../api/apiRouter';
+import encodingForModel from 'gpt-tokenizer';
+
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -44,7 +46,11 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
 
       const panel = getOrCreateChatPanel();
       const userBubble = messages.find(m => m.role === 'user')!.content;
-      panel.webview.postMessage({ type: 'appendUser', message: userBubble });
+      panel.webview.postMessage({
+        type: 'appendUser',
+        message: userBubble,
+        tokens: encodingForModel.encode(userBubble).length,
+      });
 
       await routeChatRequest({
         model: vscode.workspace
@@ -90,7 +96,11 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
 
       const panel = getOrCreateChatPanel();
       const userBubble = messages.find(m => m.role === 'user')!.content;
-      panel.webview.postMessage({ type: 'appendUser', message: userBubble });
+      panel.webview.postMessage({
+        type: 'appendUser',
+        message: userBubble,
+        tokens: encodingForModel.encode(userBubble).length,
+      });
 
       await routeChatRequest({
         model: vscode.workspace

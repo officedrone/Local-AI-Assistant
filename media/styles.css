@@ -257,3 +257,10 @@ code {
 .dual-button:hover {
   background: var(--btn-hover-bg);
 }
+.token-count {
+  font-size: 0.8em;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-editor-background);
+  margin-top: 4px;
+  border-radius: 6px;
+}

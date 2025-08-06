@@ -4,7 +4,7 @@
   "description": "A VS Code extension that interacts with a LLM API endpoint on your network",
   "publisher": "officedrone",
   "icon": "media/icon.png",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "repository": {
     "type": "git",
     "url": "https://github.com/officedrone/local-ai-assistant"
@@ -15,6 +15,14 @@
   "engines": {
     "vscode": ">=1.90.0"
   },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets",
+    "AI",
+    "Chat",
+    "Other"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -52,7 +60,6 @@
         "category": "Local AI Assistant"
       }
     ],
-
     "keybindings": [
       {
         "command": "extension.selectModel",
@@ -80,14 +87,12 @@
         "mac": "cmd+shift+alt+k"
       }
     ],
-
     "submenus": [
       {
         "id": "localAI.submenu",
         "label": "Local AI Assistant"
       }
     ],
-
     "menus": {
       "editor/context": [
         {
@@ -95,7 +100,6 @@
           "group": "LocalAIAssistant@1"
         }
       ],
-
       "localAI.submenu": [
         {
           "command": "extension.openChatPanel"
@@ -108,13 +112,15 @@
         }
       ]
     },
-
     "configuration": {
       "title": "Local AI Assistant",
       "properties": {
         "localAIAssistant.apiType": {
           "type": "string",
-          "enum": ["OpenAI", "Ollama"],
+          "enum": [
+            "OpenAI",
+            "Ollama"
+          ],
           "default": "OpenAI",
           "description": "Choose the type of API to interact with — OpenAI or Ollama (upcoming – not supported yet)."
         },
@@ -148,12 +154,18 @@
           "type": "boolean",
           "default": true,
           "description": "Include the full file text as context for code requests."
+        },
+        "localAIAssistant.maxTokens": {
+          "type": "number",
+          "default": 4096,
+          "description": "Maximum allowed tokens per request."
         }
       }
     }
   },
   "dependencies": {
-    "axios": "^1.4.0"
+    "axios": "^1.4.0",
+    "gpt-tokenizer": "^3.0.1"
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
