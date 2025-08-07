@@ -5,19 +5,36 @@ import { buildChatMessages } from './promptBuilder';
 import { getWebviewContent } from '../static/chatPanelView';
 import { fetchAvailableModels } from '../api/openaiProxy';
 import encodingForModel from 'gpt-tokenizer';
+import {
+  countMessageTokens,
+  countTextTokens,
+  getFileContextTokens,
+  addToSessionTokenCount,
+  getSessionTokenCount,
+  resetSessionTokenCount,
+  getChatTokenCount
+} from './tokenActions';
+
 
 const CONFIG_SECTION = 'localAIAssistant';
 
 let chatPanel: vscode.WebviewPanel | undefined;
 const abortControllers = new WeakMap<vscode.WebviewPanel, AbortController>();
 let extensionContext: vscode.ExtensionContext;
+let lastFileContextTokens = 0;
 
 // tracks the history of messages
 let conversation: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
 
+//Code editor definition for context purposes
+function getCodeEditor(): vscode.TextEditor | undefined {
+  return vscode.window.visibleTextEditors.find(
+    (ed) => ed.document.uri.scheme !== 'vscode-webview'
+  );
+}
+
 /**
- * Called on extension activation.  
- * Registers the `openChatPanel` command and wires up VSCode events
+ * Called on extension activation. Registers the `openChatPanel` command and wires up VSCode events
  * so file‐context token count is continuously pushed.
  */
 export function registerChatPanelCommand(context: vscode.ExtensionContext) {
@@ -38,8 +55,8 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
     // only fire when there's a normal text editor in focus
     if (
       chatPanel &&
-      editor &&                                             // not undefined
-      editor.document.uri.scheme !== 'vscode-webview'     // not the chat webview
+      editor &&                                         
+      editor.document.uri.scheme !== 'vscode-webview'     
     ) {
       postFileContextTokens(chatPanel);
     }
@@ -59,10 +76,24 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
   );
 }
 
+//SessionTokenUpdate function
+export function postSessionTokenUpdate(panel: vscode.WebviewPanel, sessionTokens: number, fileContextTokens: number) {
+  panel.webview.postMessage({
+    type: 'sessionTokenUpdate',
+    sessionTokens,
+    fileContextTokens,
+    totalTokens: sessionTokens + fileContextTokens,
+  });
+}
+
 export function getOrCreateChatPanel(): vscode.WebviewPanel {
   if (chatPanel) {
     chatPanel.reveal(vscode.ViewColumn.Two);
     postFileContextTokens(chatPanel);
+    postSessionTokenUpdate(chatPanel, getSessionTokenCount(), lastFileContextTokens);
+
+
+
     return chatPanel;
   }
 
@@ -116,7 +147,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
         let fileContext: string | undefined;
         if (includeCtx) {
-          const editor = vscode.window.activeTextEditor;
+          const editor = getCodeEditor();
           if (editor && editor.document.uri.scheme !== 'vscode-webview') {
             fileContext = editor.document.getText();
           }
@@ -126,7 +157,8 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
           .getConfiguration(CONFIG_SECTION)
           .get<string>('model') || '';
 
-        const userTokens = encodingForModel.encode(userMessage).length;
+        const userTokens = countTextTokens(userMessage);
+        addToSessionTokenCount(userTokens);
 
         // build chat messages and append to conversation history
         conversation.push(
@@ -138,16 +170,15 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         );
 
         // check total token budget
-        const total = countTokens(conversation);
+        const total = countMessageTokens(conversation);
         const maxTokens = vscode.workspace
           .getConfiguration(CONFIG_SECTION)
           .get<number>('maxTokens', 4096);
 
         if (total > maxTokens) {
           vscode.window.showWarningMessage(
-            `Your conversation uses ${total} tokens, but the context limit is ${maxTokens}.`
+            `Your conversation uses ${total} tokens, which is above your context (${maxTokens}).`
           );
-          return;
         }
 
         // render the user bubble
@@ -157,13 +188,16 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
           tokens: userTokens,
         });
 
-        // update file‐context count in the UI
-        postFileContextTokens(panel);
+        postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
 
         // stream the assistant response
         await handleAiRequest(conversation, model, panel);
+
+        // Push content count for context after response
+        postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
         break;
       }
+
 
       case 'stopGeneration':
         abortControllers.get(panel)?.abort();
@@ -177,9 +211,11 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         break;
 
       case 'newSession':
-        panel.dispose();
-        chatPanel = undefined;
-        getOrCreateChatPanel();
+        resetSessionTokenCount();
+        chatPanel?.dispose();
+        chatPanel = getOrCreateChatPanel();
+        lastFileContextTokens = getFileContextTokens();
+        postSessionTokenUpdate(chatPanel, getSessionTokenCount(), lastFileContextTokens);
         break;
 
       case 'insertCode':
@@ -207,24 +243,14 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
   return chatPanel;
 }
 
-/**
- * Count tokens in a conversation array.
- */
-function countTokens(messages: { role: string; content: string }[]): number {
-  let total = 0;
-  for (const m of messages) {
-    total += encodingForModel.encode(m.content).length;
-    total += 4; // metadata padding
-  }
-  return total;
-}
 
-/**
- * Sends both `tokens` and `maxTokens` to the webview
- * so it can render "Current file in context X of Y".
- */
+//Sends both `tokens` and `maxTokens` to the webview so it can render "Current file in context X of Y".
 function postFileContextTokens(panel: vscode.WebviewPanel) {
-  const tokens = getFileContextTokens();
+  const editor = getCodeEditor();  
+  const tokens = editor
+    ? countTextTokens(editor.document.getText())
+    : 0;
+  lastFileContextTokens = tokens;
   const maxTokens = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
     .get<number>('maxTokens', 4096);
@@ -234,30 +260,13 @@ function postFileContextTokens(panel: vscode.WebviewPanel) {
     tokens,
     maxTokens,
   });
+  postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
 }
 
-/**
- * Returns the token count of the active file, or 0 if disabled/no file.
- */
-function getFileContextTokens(): number {
-  const includeCtx = vscode.workspace
-    .getConfiguration(CONFIG_SECTION)
-    .get<boolean>('includeFileContext', true);
-  if (!includeCtx) {
-    return 0;
-  }
-  const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.uri.scheme === 'vscode-webview') {
-    return 0;
-  }
-  return encodingForModel.encode(editor.document.getText()).length;
-}
 
-/**
- * Streams a chat completion from your endpoint, relaying start/stream/end
- * events back to the webview.
- */
-export async function handleAiRequest(
+
+ //Streams a chat completion, relays start/stream/end events back to the webview.
+ export async function handleAiRequest(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   model: string,
   panel: vscode.WebviewPanel
@@ -300,12 +309,16 @@ export async function handleAiRequest(
               const parsed = JSON.parse(m[1]);
               const delta = parsed.choices?.[0]?.delta?.content ?? '';
               assistantText += delta;
+              const deltaTokens = countTextTokens(delta);
+              addToSessionTokenCount(deltaTokens);
+
+              // Push streaming token update
+              postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
               panel.webview.postMessage({
                 type: 'streamChunk',
                 message: delta,
               });
             } catch {
-              // ignore
             }
           }
         }
@@ -313,10 +326,16 @@ export async function handleAiRequest(
     }
 
     panel.webview.postMessage({ type: 'endStream', message: '' });
+
+    const assistantTokens = encodingForModel.encode(assistantText).length;
+    addToSessionTokenCount(assistantTokens);
+
     panel.webview.postMessage({
       type: 'finalizeAI',
-      tokens: encodingForModel.encode(assistantText).length,
+      tokens: assistantTokens,
     });
+    postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
+
 
     messages.push({ role: 'assistant', content: assistantText });
   } catch (err: any) {

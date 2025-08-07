@@ -9,6 +9,11 @@ export function getWebviewContent(
     .getConfiguration(CONFIG_SECTION)
     .get<boolean>('includeFileContext', true);
 
+  const maxTokens = vscode.workspace
+  .getConfiguration(CONFIG_SECTION)
+  .get<number>('maxTokens', 4096);
+
+
   const styleUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(context.extensionUri, 'media', 'styles.css')
   );
@@ -31,7 +36,6 @@ export function getWebviewContent(
   </div>
 
   <button id="scrollToBottomButton" title="Scroll to bottom">↓</button>
-
   <div id="chat-container"></div>
 
   <div class="input-wrapper">
@@ -56,6 +60,14 @@ export function getWebviewContent(
     </label>
   </div>
 
+  <div id="sessionTokenContainer">
+    Chat Tokens: <span id="sessionTokenCount">0</span><br>
+    File Context Tokens: <span id="fileTokenCount">0</span><br>
+    Total Tokens: <span id="totalTokenCount">0</span> of ${maxTokens} tokens
+
+
+  </div>
+
   <script src="${mdItUri}"></script>
   <script>
     const vscode = acquireVsCodeApi();
@@ -77,14 +89,17 @@ export function getWebviewContent(
     // Auto-scroll logic
     chat.addEventListener('scroll', () => {
       const buffer = 5;
-      const atBottom = chat.scrollTop + chat.clientHeight >= chat.scrollHeight - buffer;
+      const atBottom =
+        chat.scrollTop + chat.clientHeight >= chat.scrollHeight - buffer;
       if (!userInitiatedScroll && !atBottom) return;
       shouldAutoScroll = atBottom;
       scrollBtn.style.display = atBottom ? 'none' : 'block';
     });
 
     ['wheel', 'touchstart', 'mousedown'].forEach(evt =>
-      chat.addEventListener(evt, () => userInitiatedScroll = true, { passive: true })
+      chat.addEventListener(evt, () => (userInitiatedScroll = true), {
+        passive: true
+      })
     );
 
     scrollBtn.addEventListener('click', () => {
@@ -140,11 +155,10 @@ export function getWebviewContent(
       const bubble = document.createElement('div');
       bubble.className = 'message ' + cls;
       const prefix = cls === 'user-message' ? 'You:' : 'Assistant:';
-
-      const tokenHtml = tokenCount !== null
-        ? \`<div class="token-count">🧮 \${tokenCount} tokens</div>\`
-        : '';
-
+      const tokenHtml =
+        tokenCount !== null
+          ? \`<div class="token-count">🧮 \${tokenCount} tokens</div>\`
+          : '';
       bubble.innerHTML = \`
         <div class="markdown-body">
           <strong>\${prefix}</strong><br/>
@@ -152,7 +166,6 @@ export function getWebviewContent(
           \${tokenHtml}
         </div>
       \`;
-
       injectLinks(bubble);
       chat.appendChild(bubble);
       scrollToBottom();
@@ -160,47 +173,80 @@ export function getWebviewContent(
     }
 
     window.addEventListener('message', ev => {
-      const { type, message, tokens, maxTokens } = ev.data;
+      const {
+        type,
+        message,
+        tokens,
+        maxTokens,
+        sessionTokens,
+        fileContextTokens,
+        totalTokens
+      } = ev.data;
 
-      if (type === 'startStream') {
-        isStreaming = true;
-        assistantRaw = '';
-        assistantElem = appendBubble('…', 'ai-message thinking');
-        sendBtn.textContent = 'Stop';
+      switch (type) {
+        case 'startStream':
+          isStreaming = true;
+          assistantRaw = '';
+          assistantElem = appendBubble('…', 'ai-message thinking');
+          sendBtn.textContent = 'Stop';
+          break;
 
-      } else if (type === 'streamChunk') {
-        if (assistantElem?.classList.contains('thinking')) {
-          assistantElem.classList.remove('thinking');
-        }
-        assistantRaw += message;
-        const mdBody = assistantElem.querySelector('.markdown-body');
-        mdBody.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(assistantRaw);
-        injectLinks(assistantElem);
-        scrollToBottom();
-
-      } else if (type === 'endStream' || type === 'stoppedStream') {
-        isStreaming = false;
-        sendBtn.textContent = 'Send';
-
-      } else if (type === 'appendUser' && message) {
-        appendBubble(message, 'user-message', tokens);
-
-      } else if (type === 'fileContextTokens') {
-        const tokenSpan = document.getElementById('contextTokenCount');
-        if (tokenSpan) {
-          tokenSpan.textContent = \`(\${tokens} of \${maxTokens} tokens)\`;
-          if (typeof maxTokens === 'number' && tokens > maxTokens) {
-            tokenSpan.style.color = 'red';
-          } else {
-            tokenSpan.style.color = '#888';
+        case 'streamChunk':
+          if (assistantElem?.classList.contains('thinking')) {
+            assistantElem.classList.remove('thinking');
           }
+          assistantRaw += message;
+          const mdBody = assistantElem.querySelector('.markdown-body');
+          mdBody.innerHTML =
+            '<strong>Assistant:</strong><br/>' + renderMd(assistantRaw);
+          injectLinks(assistantElem);
+          scrollToBottom();
+          break;
+
+        case 'endStream':
+        case 'stoppedStream':
+          isStreaming = false;
+          sendBtn.textContent = 'Send';
+          break;
+
+        case 'appendUser':
+          if (message != null && typeof tokens === 'number') {
+            appendBubble(message, 'user-message', tokens);
+          }
+          break;
+
+        case 'fileContextTokens': {
+          const ctxSpan = document.getElementById('contextTokenCount');
+          if (ctxSpan && typeof tokens === 'number') {
+            ctxSpan.textContent = \`(\${tokens} tokens)\`;
+            ctxSpan.style.color = tokens > maxTokens ? 'red' : '#888';
+          }
+          break;
         }
 
-      } else if (type === 'finalizeAI' && typeof tokens === 'number') {
-        const tokenDiv = document.createElement('div');
-        tokenDiv.className = 'token-count';
-        tokenDiv.textContent = \`🧮 \${tokens} tokens\`;
-        assistantElem?.querySelector('.markdown-body')?.appendChild(tokenDiv);
+        case 'finalizeAI':
+          if (typeof tokens === 'number' && assistantElem) {
+            const tokenDiv = document.createElement('div');
+            tokenDiv.className = 'token-count';
+            tokenDiv.textContent = \`🧮 \${tokens} tokens\`;
+            assistantElem
+              .querySelector('.markdown-body')
+              .appendChild(tokenDiv);
+          }
+          break;
+
+        case 'sessionTokenUpdate': {
+          const sessionSpan = document.getElementById('sessionTokenCount');
+          const fileSpan = document.getElementById('fileTokenCount');
+          const totalSpan = document.getElementById('totalTokenCount');
+          if (sessionSpan) sessionSpan.textContent = String(sessionTokens);
+          if (fileSpan) fileSpan.textContent = String(fileContextTokens);
+          if (totalSpan) totalSpan.textContent = String(totalTokens);
+          break;
+        }
+
+        default:
+          console.warn('Unknown message type:', type);
       }
     });
 
@@ -219,7 +265,6 @@ export function getWebviewContent(
         shouldAutoScroll = true;
         userInitiatedScroll = false;
         scrollToBottom(true);
-
       } else {
         vscode.postMessage({ type: 'stopGeneration' });
       }
@@ -261,7 +306,6 @@ export function getWebviewContent(
         document.body.removeChild(ta);
         t.textContent = 'Copied!';
         setTimeout(() => (t.textContent = 'Copy'), 2000);
-
       } else if (t.matches('a.insert-link')) {
         vscode.postMessage({ type: 'insertCode', message: code });
       }

@@ -3,6 +3,8 @@ import { buildChatMessages, getLanguage } from './promptBuilder';
 import { getOrCreateChatPanel } from './chatPanel';
 import { routeChatRequest } from '../api/apiRouter';
 import encodingForModel from 'gpt-tokenizer';
+import { countTextTokens } from './tokenActions';
+
 
 
 const CONFIG_SECTION = 'localAIAssistant';
@@ -49,7 +51,7 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       panel.webview.postMessage({
         type: 'appendUser',
         message: userBubble,
-        tokens: encodingForModel.encode(userBubble).length,
+        tokens: countTextTokens(userBubble),
       });
 
       await routeChatRequest({
