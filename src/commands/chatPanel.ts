@@ -34,12 +34,17 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
 
   // When the user switches editors, recalc & push tokens
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => {
-      if (chatPanel) {
-        postFileContextTokens(chatPanel);
-      }
-    })
-  );
+  vscode.window.onDidChangeActiveTextEditor(editor => {
+    // only fire when there's a normal text editor in focus
+    if (
+      chatPanel &&
+      editor &&                                             // not undefined
+      editor.document.uri.scheme !== 'vscode-webview'     // not the chat webview
+    ) {
+      postFileContextTokens(chatPanel);
+    }
+  })
+);
 
   // Register the "Open Chat" command
   context.subscriptions.push(
@@ -140,7 +145,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
         if (total > maxTokens) {
           vscode.window.showWarningMessage(
-            `⚠️ Your conversation uses ${total} tokens, but the limit is ${maxTokens}.`
+            `Your conversation uses ${total} tokens, but the context limit is ${maxTokens}.`
           );
           return;
         }

@@ -158,7 +158,7 @@
         "localAIAssistant.maxTokens": {
           "type": "number",
           "default": 4096,
-          "description": "Maximum allowed tokens per request."
+          "description": "AI nodel Context limit (in tokens) - Match this number to your LLM service context number for best results"
         }
       }
     }
