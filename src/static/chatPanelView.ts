@@ -61,9 +61,9 @@ export function getWebviewContent(
   </div>
 
   <div id="sessionTokenContainer">
-    Chat Tokens: <span id="sessionTokenCount">0</span><br>
+    Chat Session Tokens: <span id="sessionTokenCount">0</span><br>
     File Context Tokens: <span id="fileTokenCount">0</span><br>
-    Total Tokens: <span id="totalTokenCount">0</span> of ${maxTokens} tokens
+    Total Tokens: <span id="totalTokenCount">0</span> (Context size ${maxTokens} tokens)
 
 
   </div>

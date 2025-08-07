@@ -5,30 +5,26 @@ html, body {
   height: 100vh;
   margin: 0;
   padding: 0;
+  font-family: Arial, sans-serif;
 }
 
 /* ─── COLOR VARIABLES ───────────────────────── */
 :root {
-  /* Bubble backgrounds */
   --user-bg: var(--vscode-button-background);
   --assistant-bg: var(--vscode-editorHoverWidget-background);
 
-  /* Text colors */
   --user-text: var(--vscode-editor-foreground);
   --assistant-text: var(--vscode-editor-foreground);
 
-  /* Code block styling */
   --code-bg: var(--vscode-editorWidget-background);
   --code-border: var(--vscode-editorWidget-border);
 
-  /* Button */
   --btn-bg: var(--vscode-button-background);
   --btn-hover-bg: var(--vscode-button-hoverBackground);
 }
 
 /* ─── PAGE & BUBBLES ─────────────────────────── */
 body {
-  font-family: Arial, sans-serif;
   background: var(--vscode-editor-background);
   color: var(--vscode-editor-foreground);
   padding: 20px;
@@ -36,7 +32,7 @@ body {
 }
 
 #chat-container {
-  flex: 1 1 auto;           /* make chat area grow/shrink */
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -60,11 +56,23 @@ body {
   font-size: 1rem;
 }
 
+@keyframes bubblePop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .user-message {
   align-self: flex-end;
   background: var(--user-bg);
   color: var(--user-text);
   text-align: right;
+  animation: bubblePop 0.5s ease-out;
 }
 
 .ai-message {
@@ -72,6 +80,7 @@ body {
   background: var(--assistant-bg);
   color: var(--assistant-text);
   text-align: left;
+  animation: bubblePop 0.7s ease-out 0.2s;
 }
 
 .thinking {
@@ -112,7 +121,8 @@ code {
   margin-bottom: 12px;
 }
 
-#newSessionButton:hover {
+#newSessionButton:hover,
+#settingsButton:hover {
   background: var(--btn-hover-bg);
 }
 
@@ -144,7 +154,7 @@ code {
 #scrollToBottomButton {
   position: fixed;
   right: 60px;
-  bottom: 200px;
+  bottom: 240px;
   padding: 6px 10px;
   background: var(--btn-bg);
   color: var(--vscode-button-foreground);
@@ -160,15 +170,7 @@ code {
   background: var(--btn-hover-bg);
 }
 
-/* ─── INPUT AREA & SETTINGS ─────────────────── */
-#input-area {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start; 
-  margin-top: 10px;
-}
-
-
+/* ─── INPUT AREA ────────────────────────────── */
 #messageInput {
   flex: 1;
   padding: 12px;
@@ -183,9 +185,8 @@ code {
   min-height: 3em;
 }
 
-
 #sendButton {
-  width: 70px; 
+  width: 70px;
   padding: 12px;
   background: var(--btn-bg);
   color: white;
@@ -196,14 +197,13 @@ code {
   text-align: center;
 }
 
-#sendButton:hover,
-#settingsButton:hover {
+#sendButton:hover {
   background: var(--btn-hover-bg);
 }
 
 /* ─── FILE CONTEXT CHECKBOX ──────────────────── */
 #fileContextContainer {
-  flex: none;               /* keep checkbox pinned */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -222,6 +222,7 @@ code {
   cursor: pointer;
 }
 
+/* ─── LAYOUT STRUCTURE ───────────────────────── */
 .input-wrapper {
   display: flex;
   flex-direction: row;
@@ -237,42 +238,17 @@ code {
   align-items: flex-end;
   gap: 6px;
 }
+
 #session-controls {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
 }
 
-.dual-button {
-  flex: 1;
-  padding: 12px 24px;
-  background: var(--btn-bg);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-
-.dual-button:hover {
-  background: var(--btn-hover-bg);
-}
 .token-count {
   font-size: 0.8em;
   color: var(--vscode-input-foreground);
   background: var(--vscode-editor-background);
   margin-top: 4px;
   border-radius: 6px;
-}
-
-
-#token-stats {
-  font-family: sans-serif;
-  font-size: 13px;
-  margin-bottom: 10px;
-  color: #888;
-}
-
-#token-stats div {
-  margin: 4px 0;
 }

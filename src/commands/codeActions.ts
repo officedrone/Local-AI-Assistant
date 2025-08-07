@@ -3,9 +3,11 @@ import { buildChatMessages, getLanguage } from './promptBuilder';
 import { getOrCreateChatPanel } from './chatPanel';
 import { routeChatRequest } from '../api/apiRouter';
 import encodingForModel from 'gpt-tokenizer';
-import { countTextTokens } from './tokenActions';
-
-
+import {
+  countTextTokens,
+  countMessageTokens,
+  addToSessionTokenCount
+} from './tokenActions';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -36,7 +38,6 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         ? editor.document.getText()
         : editor.document.getText(sel);
 
-      // detect the file's language
       const language = await getLanguage();
 
       const messages = buildChatMessages({
@@ -47,11 +48,19 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       });
 
       const panel = getOrCreateChatPanel();
-      const userBubble = messages.find(m => m.role === 'user')!.content;
+
+      // Grab the full user message object
+      const userMessage = messages.find(m => m.role === 'user')!;
+
+      // Count tokens and add to session total
+      const tokenCount = countMessageTokens([userMessage]);
+      addToSessionTokenCount(tokenCount);
+
+      // Post user bubble to webview
       panel.webview.postMessage({
         type: 'appendUser',
-        message: userBubble,
-        tokens: countTextTokens(userBubble),
+        message: userMessage.content,
+        tokens: tokenCount
       });
 
       await routeChatRequest({
@@ -86,7 +95,6 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         ? editor.document.lineAt(sel.active.line).text
         : editor.document.getText(sel);
 
-      // detect the file's language
       const language = await getLanguage();
 
       const messages = buildChatMessages({
@@ -97,11 +105,19 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       });
 
       const panel = getOrCreateChatPanel();
-      const userBubble = messages.find(m => m.role === 'user')!.content;
+
+      // Grab the full user message object
+      const userMessage = messages.find(m => m.role === 'user')!;
+
+      // Count tokens and add to session total
+      const tokenCount = countMessageTokens([userMessage]);
+      addToSessionTokenCount(tokenCount);
+
+      // Post user bubble to webview
       panel.webview.postMessage({
         type: 'appendUser',
-        message: userBubble,
-        tokens: encodingForModel.encode(userBubble).length,
+        message: userMessage.content,
+        tokens: tokenCount
       });
 
       await routeChatRequest({
