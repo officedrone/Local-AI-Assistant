@@ -1,5 +1,14 @@
 # Change Log
 
+
+## 0.0.5 – Token counter, maxTokens config option
+
+- introduced maxTokens config option to specify contex size
+- introduced token counters at the top of the chat section and chat bubbles
+- styling improvements
+- added extension tags
+
+
 ## 0.0.4 – Context menu and language auto-detect
 
 - leverage VS Code language auto-detect and embed detected language in prompts
