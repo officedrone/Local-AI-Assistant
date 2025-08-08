@@ -63,7 +63,7 @@ function registerSetApiKeyCommand(context: vscode.ExtensionContext) {
   const cmd = vscode.commands.registerCommand('extension.setApiKey', async () => {
     const key = await promptForApiKey();
     if (key) {
-      await context.secrets.store('localAIAssistant.apiKey', key);
+      await context.secrets.store('localAIAssistant.apiLLM.config.apiKey', key);
       vscode.window.showInformationMessage('API key saved securely.');
     }
   });

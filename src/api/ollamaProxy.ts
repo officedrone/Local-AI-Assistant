@@ -1,5 +1,3 @@
-// src/api/ollamaProxy.ts
-
 import * as vscode from 'vscode';
 
 const CONFIG_SECTION = 'localAIAssistant';
@@ -16,9 +14,12 @@ interface ChatResponse {
   };
 }
 
-/**
- * Sends a structured chat request to the local Ollama API.
- */
+// Normalize endpoint to include /api if missing
+function normalizeOllamaEndpoint(endpoint: string): string {
+  return endpoint.includes('/api') ? endpoint : `${endpoint.replace(/\/$/, '')}/api`;
+}
+
+// Send chat request to Ollama
 export async function sendToOllama({
   model,
   messages,
@@ -26,7 +27,7 @@ export async function sendToOllama({
 }: ChatRequestOptions): Promise<string> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const base = config.get<string>('ollamaEndpoint') ?? 'http://localhost:11434';
-  const endpoint = `${base.replace(/\/$/, '')}/api/chat`;
+  const endpoint = `${normalizeOllamaEndpoint(base)}/chat`;
 
   const payload = { model, messages };
 
@@ -52,13 +53,11 @@ export async function sendToOllama({
   }
 }
 
-/**
- * Fetches available Ollama tags (models).
- */
+// Fetch available Ollama tags
 export async function fetchOllamaTags(): Promise<string[]> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const base = config.get<string>('ollamaEndpoint') ?? 'http://localhost:11434';
-  const endpoint = `${base.replace(/\/$/, '')}/api/tags`;
+  const endpoint = `${normalizeOllamaEndpoint(base)}/tags`;
 
   try {
     const res = await fetch(endpoint, {

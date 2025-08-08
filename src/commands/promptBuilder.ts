@@ -46,6 +46,10 @@ export function buildChatMessages({
 
   if (mode === 'chat') {
     systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code blocks unless the user requests the full file. The language in use is ${language}.`;
+
+    if (fileContext) {
+      systemPrompt += `\n\nHere is the current file context:\n${fileContext}`;
+    }
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(code, fileContext, language);
   } else {

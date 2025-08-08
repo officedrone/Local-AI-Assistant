@@ -1,7 +1,4 @@
-// src/api/openaiProxy.ts
-
 import * as vscode from 'vscode';
-
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -19,9 +16,12 @@ interface ChatResponse {
   }[];
 }
 
-/**
- * Sends a chat request to the OpenAI endpoint using messages[]
- */
+// Normalize endpoint to include /v1 if missing
+function normalizeOpenAIEndpoint(endpoint: string): string {
+  return endpoint.includes('/v1') ? endpoint : `${endpoint.replace(/\/$/, '')}/v1`;
+}
+
+// Send chat request to OpenAI-compatible endpoint
 export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptions): Promise<string> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const endpoint = config.get<string>('endpoint');
@@ -31,11 +31,12 @@ export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptio
     return 'Error: No endpoint';
   }
 
+  const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
   const apiKey = config.get<string>('apiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiKey');
+    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
 
   try {
-    const res = await fetch(`${endpoint}/chat/completions`, {
+    const res = await fetch(`${normalizedEndpoint}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -66,22 +67,22 @@ export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptio
   }
 }
 
-/**
- * Fetch available models from /v1/models endpoint
- */
+// Fetch available models
 export async function fetchAvailableModels(): Promise<string[]> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const endpoint = config.get<string>('endpoint');
   const apiKey = config.get<string>('apiKey') ??
-    await vscode.extensions.getExtension('your.extension.id')?.exports?.getSecret?.('localAIAssistant.apiKey');
+    await vscode.extensions.getExtension('your.extension.id')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
 
   if (!endpoint) {
     vscode.window.showErrorMessage('❌ No endpoint configured.');
     return [];
   }
 
+  const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
+
   try {
-    const res = await fetch(`${endpoint}/models`, {
+    const res = await fetch(`${normalizedEndpoint}/models`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

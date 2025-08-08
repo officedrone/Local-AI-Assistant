@@ -19,8 +19,6 @@ export async function routeChatRequest({
   const cfg = vscode.workspace.getConfiguration('localAIAssistant');
   const apiType = cfg.get<string>('apiType', 'openai')!.toLowerCase();
 
-  console.log('[routeChatRequest] incoming model:', JSON.stringify(model));
-
   // 1) If streaming (panel present), let chatPanel handle it
   if (panel) {
     return handleAiRequest(messages, model, panel);

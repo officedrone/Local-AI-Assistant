@@ -1,5 +1,6 @@
 // src/static/prompts.ts
 
+
 //
 // Code Validation & Completion Prompts
 //

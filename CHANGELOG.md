@@ -1,24 +1,32 @@
 # Change Log
 
 
+## 0.0.6 – Bugfix, Settings re-org, setup instructions
+
+- FIX: content not being passed correctly when chatting from input box
+- ADD: dynamic handling for /v1 and /api trails in the apiURL field.
+- ADD: settings categories
+- readme update - setup section
+
+
 ## 0.0.5 – Token counter, maxTokens config option
 
-- introduced maxTokens config option to specify contex size
-- introduced token counters at the top of the chat section and chat bubbles
+- ADD: maxTokens config option to specify contex size
+- ADD: token counters at the top of the chat section and chat bubbles
 - styling improvements
-- added extension tags
+- ADD: extension tags
 
 
 ## 0.0.4 – Context menu and language auto-detect
 
-- leverage VS Code language auto-detect and embed detected language in prompts
-- added right-click menu in editor for complete code, validate code, open chat window
+- ADD: leverage VS Code language auto-detect and embed detected language in prompts
+- ADD: right-click menu in editor for complete code, validate code, open chat window
 - prompt enhancements
 
 ## 0.0.3 – Tooltip Tweaks
 
 - tweak tooltip agressiveness; 
-- add tooltip disable button to tooltip; 
+- ADD: tooltip disable button to tooltip; 
 - update readme; 
 - update chatpanel size
 

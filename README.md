@@ -11,7 +11,20 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 - Network access to said endpoint (localhost or LAN)
 - VS Code version `1.90.0` or newer
 
----
+## Connecting the extension to your LLM
+The extension must be connected to your LLM before you can use it. Follow the steps below to connect it.
+
+1. Install an LLM service provider such as [LM Studio](https://lmstudio.ai/) if you haven't already
+2. Start the servce and host your model on the network
+3. Install the extension in your VS Code
+4. Open the extension chat panel and navigate to the extension settings
+5. Update the endpoint URL to your LLM service URL
+6. Update the api Type (OpenAPI-compatible vs Ollama)
+7. (Optional) Add an API key or specify a model if your service requires them
+
+
+![URL setup demo](./media/readme-setup.gif)
+
 
 ## Features List
 - Code validation / Code completion in chat
@@ -19,6 +32,7 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 - Tooltip / Right-click menu with extension commands
 - File context (multiple files coming soon) / Language auto-detection
 - Chat / Extension Settings UI
+
 
 ## Validate Code Block  
 Checks and validates selected code (or entire file if nothing is selected).
@@ -89,19 +103,31 @@ Accessible via:
 - The gear icon in the chat panel  
 - Preferences → Settings → Extensions → Local AI Assistant
 
-### Configuration Options
+## Configuration Options
 
-| Setting                               | Description                                                                 |
-|---------------------------------------|-----------------------------------------------------------------------------|
-| `localAIAssistant.endpoint`           | LLM API base URL (e.g. `http://localhost:1234/v1`)                         |
-| `localAIAssistant.apiType`            | Select LLM type (`OpenAI`, `Ollama`)                                       |
-| `localAIAssistant.apiAuthRequired`    | If enabled, prompts user to enter a secure API key                         |
-| `localAIAssistant.model`              | Default model for completions and chat                                     |
-| `localAIAssistant.includeFileContext` | Whether to send full file text during code requests                        |
-| `localAIAssistant.idleTooltipDelay`   | Delay before showing idle tooltips (in milliseconds)                       |
-| `localAIAssistant.enableExtensionTooltip` | Enables or disables the tooltip                               |
+### API Settings
 
----
+| Setting                                                  | Description                                                                 |
+|----------------------------------------------------------|-----------------------------------------------------------------------------|
+| `localAIAssistant.apiLLM.config.apiType`                 | Select LLM type (`OpenAI`, `Ollama`)                                        |
+| `localAIAssistant.apiLLM.apiURL.endpoint`                | LLM API base URL (e.g. `http://localhost:1234/v1`)                          |
+| `localAIAssistant.apiLLM.config.apiAuthRequired`         | If enabled, prompts user to enter a secure API key                          |
+| `localAIAssistant.apiLLM.config.model`                   | Default model for completions and chat (e.g. `qwen2.5-coder-7b-instruct`)   |
+
+### Context Settings
+
+| Setting                                                  | Description                                                                 |
+|----------------------------------------------------------|-----------------------------------------------------------------------------|
+| `localAIAssistant.context.contextSize`                   | AI model context limit (in tokens)                                          |
+| `localAIAssistant.context.includeFileContext`            | Whether to send active editor text during code/chat requests                |
+
+### UI Settings
+
+| Setting                                                  | Description                                                                 |
+|----------------------------------------------------------|-----------------------------------------------------------------------------|
+| `localAIAssistant.tooltop.enableExtensionTooltip`        | Enables or disables the tooltip in the main code editor                     |
+| `localAIAssistant.tooltip.idleTooltipDelay`              | Delay before showing idle tooltips (in milliseconds)                        |
+
 
 ## Upcoming features
 

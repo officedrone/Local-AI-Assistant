@@ -278,7 +278,7 @@ export function getWebviewContent(
         e.preventDefault();
         vscode.postMessage({
           type: 'openSettings',
-          key: 'localAIAssistant.maxTokens'
+          key: 'localAIAssistant.context.contextSize'
         });
       });
 

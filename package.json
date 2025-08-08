@@ -4,7 +4,7 @@
   "description": "A VS Code extension that interacts with a LLM API endpoint on your network",
   "publisher": "officedrone",
   "icon": "media/icon.png",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "repository": {
     "type": "git",
     "url": "https://github.com/officedrone/local-ai-assistant"
@@ -115,7 +115,7 @@
     "configuration": {
       "title": "Local AI Assistant",
       "properties": {
-        "localAIAssistant.apiType": {
+        "localAIAssistant.apiLLM.config.apiType": {
           "type": "string",
           "enum": [
             "OpenAI",
@@ -124,41 +124,41 @@
           "default": "OpenAI",
           "description": "Choose the type of API to interact with — OpenAI or Ollama (upcoming – not supported yet)."
         },
-        "localAIAssistant.endpoint": {
+        "localAIAssistant.apiLLM.apiURL.endpoint": {
           "type": "string",
           "default": "http://localhost:1234/v1",
-          "description": "Endpoint URL for your local LLM API."
+          "description": "Endpoint URL for your local LLM API (HINT: OpenAI URLs end in /v1, Ollama URLs end in /api)."
         },
-        "localAIAssistant.apiAuthRequired": {
+        "localAIAssistant.apiLLM.config.apiAuthRequired": {
           "type": "boolean",
           "default": false,
-          "description": "Press `Ctrl+Shift+Alt+K` to securely enter your key via the Command Palette."
+          "description": "(Optional unless your service requires it) Press `Ctrl+Shift+Alt+K` to securely enter your key via the Command Palette."
         },
-        "localAIAssistant.model": {
+        "localAIAssistant.apiLLM.config.model": {
           "type": "string",
           "default": "",
-          "description": "Model to use for completions and chat requests if your service requires it (e.g., qwen2.5-coder-7b-instruct)."
+          "description": "(Optinal unless your service requires it) Model to use for completions and chat requests, e.g.: qwen2.5-coder-7b-instruct."
         },
-        "localAIAssistant.enableExtensionTooltip": {
+        "localAIAssistant.context.contextSize": {
+          "type": "number",
+          "default": 4096,
+          "description": "AI model Context limit (in tokens) - Match this number to your LLM service context number for best results"
+        },
+        "localAIAssistant.tooltop.enableExtensionTooltip": {
           "type": "boolean",
           "default": true,
           "description": "Enable extension tooltip in the main code editor"
         },
-        "localAIAssistant.idleTooltipDelay": {
+        "localAIAssistant.tooltip.idleTooltipDelay": {
           "type": "number",
           "default": 1500,
           "minimum": 500,
           "description": "Delay in milliseconds before showing the auto-complete tooltip."
         },
-        "localAIAssistant.includeFileContext": {
+        "localAIAssistant.context.includeFileContext": {
           "type": "boolean",
           "default": true,
-          "description": "Include the full file text as context for code requests."
-        },
-        "localAIAssistant.maxTokens": {
-          "type": "number",
-          "default": 4096,
-          "description": "AI model Context limit (in tokens) - Match this number to your LLM service context number for best results"
+          "description": "Include the active editor text as context."
         }
       }
     }
