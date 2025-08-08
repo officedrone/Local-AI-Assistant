@@ -62,6 +62,19 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         message: userMessage.content,
         tokens: tokenCount
       });
+      console.log('=== Validating prompt payload ===');
+      messages.forEach((m, i) => {
+        const tokCount = encodingForModel.encode(m.content).length;
+        console.log(`  [${i}] ${m.role.toUpperCase()}: ${tokCount} tokens`);
+        // optionally log first 200 chars of the content:
+        // console.log(m.content.slice(0,200).replace(/\n/g,'⏎'));
+      });
+      console.log('  TOTAL TOKENS (no padding):', messages
+        .map(m => encodingForModel.encode(m.content).length)
+        .reduce((a,b)=>a+b, 0)
+      );
+      console.log('  TOTAL TOKENS (with +4 padding each):', countMessageTokens(messages));
+      console.log('================================');
 
       await routeChatRequest({
         model: vscode.workspace
@@ -119,6 +132,19 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         message: userMessage.content,
         tokens: tokenCount
       });
+      console.log('=== Validating prompt payload ===');
+      messages.forEach((m, i) => {
+        const tokCount = encodingForModel.encode(m.content).length;
+        console.log(`  [${i}] ${m.role.toUpperCase()}: ${tokCount} tokens`);
+        // optionally log first 200 chars of the content:
+        // console.log(m.content.slice(0,200).replace(/\n/g,'⏎'));
+      });
+      console.log('  TOTAL TOKENS (no padding):', messages
+        .map(m => encodingForModel.encode(m.content).length)
+        .reduce((a,b)=>a+b, 0)
+      );
+      console.log('  TOTAL TOKENS (with +4 padding each):', countMessageTokens(messages));
+      console.log('================================');
 
       await routeChatRequest({
         model: vscode.workspace

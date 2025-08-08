@@ -160,14 +160,18 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         const userTokens = countTextTokens(userMessage);
         addToSessionTokenCount(userTokens);
 
-        // build chat messages and append to conversation history
-        conversation.push(
-          ...buildChatMessages({
-            code: userMessage,
-            mode: 'chat',
-            fileContext,
-          })
-        );
+        // build chat messages and append to conversation history (system prompt only in first message)
+        if (conversation.length === 0) {
+          conversation.push(
+            ...buildChatMessages({
+              code: userMessage,
+              mode: 'chat',
+              fileContext,
+            })
+          );
+        } else {
+          conversation.push({ role: 'user', content: userMessage });
+        }
 
         // check total token budget
         const total = countMessageTokens(conversation);
@@ -212,10 +216,19 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
       case 'newSession':
         resetSessionTokenCount();
+        conversation = [];                // clear in-memory history
+        lastFileContextTokens = 0;        // reset file context count if desired
+
         chatPanel?.dispose();
+        chatPanel = undefined;            // force fresh creation
+
         chatPanel = getOrCreateChatPanel();
         lastFileContextTokens = getFileContextTokens();
-        postSessionTokenUpdate(chatPanel, getSessionTokenCount(), lastFileContextTokens);
+        postSessionTokenUpdate(
+          chatPanel,
+          getSessionTokenCount(),
+          lastFileContextTokens
+        );
         break;
 
       case 'insertCode':
@@ -328,7 +341,6 @@ function postFileContextTokens(panel: vscode.WebviewPanel) {
     panel.webview.postMessage({ type: 'endStream', message: '' });
 
     const assistantTokens = encodingForModel.encode(assistantText).length;
-    addToSessionTokenCount(assistantTokens);
 
     panel.webview.postMessage({
       type: 'finalizeAI',
@@ -349,7 +361,7 @@ function postFileContextTokens(panel: vscode.WebviewPanel) {
     try {
       const models = await fetchAvailableModels();
       errMsg = models.length
-        ? '🚦 LLM is reachable but no model loaded. Select or load one.'
+        ? '🚦 LLM service is reachable but no model seems to be loaded.'
         : '🔌 LLM service may be offline or misconfigured.';
     } catch {
       errMsg = '🔌 LLM service may be offline or misconfigured.';

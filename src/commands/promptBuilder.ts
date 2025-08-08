@@ -41,7 +41,7 @@ export function buildChatMessages({
   fileContext,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
-  // 1) Build the base system prompt
+  // Build the base system prompt
   let systemPrompt: string;
 
   if (mode === 'chat') {
@@ -52,15 +52,7 @@ export function buildChatMessages({
     systemPrompt = completionPrompt(code, fileContext, language);
   }
 
-  // 2) Append file context if provided
-  if (fileContext) {
-    systemPrompt += '\n\nHere is the content of the currently open file for context:\n' +
-      `\`\`\`${language}\n` +
-      fileContext.trim() +
-      '\n```';
-  }
-
-  // 3) Build the user prompt
+  // Build the user prompt
   let userPrompt: string;
   if (mode === 'chat') {
     userPrompt = code.trim();
@@ -70,7 +62,7 @@ export function buildChatMessages({
     userPrompt = userCompletionMessage(code, language);
   }
 
-  // 4) Return the two-message array
+  // Return the two-message array
   return [
     { role: 'system', content: systemPrompt.trim() },
     { role: 'user',   content: userPrompt }

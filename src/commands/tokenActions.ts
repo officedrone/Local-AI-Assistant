@@ -1,24 +1,26 @@
+// src/commands/tokenActions.ts
+
 import encodingForModel from 'gpt-tokenizer';
 import * as vscode from 'vscode';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
-//Count tokens in a list of messages.
+// Count tokens in a list of messages (includes metadata padding)
 export function countMessageTokens(messages: { role: string; content: string }[]): number {
   let total = 0;
   for (const m of messages) {
     total += encodingForModel.encode(m.content).length;
-    total += 4; // metadata padding
+    total += 4; // metadata padding per message
   }
   return total;
 }
 
-//Count tokens in a plain text string.
+// Count tokens in a plain text string
 export function countTextTokens(text: string): number {
   return encodingForModel.encode(text).length;
 }
 
-//Count tokens in the currently active file, if context is enabled.
+// Count tokens in the currently active file, if context is enabled
 export function getFileContextTokens(): number {
   const includeCtx = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
@@ -26,34 +28,34 @@ export function getFileContextTokens(): number {
   if (!includeCtx) {
     return 0;
   }
+
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.uri.scheme === 'vscode-webview') {
     return 0;
   }
+
   return countTextTokens(editor.document.getText());
 }
 
-//Chat bubbles count token
+// Get the chat-only token count (excluding file context)
 export function getChatTokenCount(): number {
-  return sessionTokenCount - getFileContextTokens();
+  return sessionTokenCount;
 }
 
-
-
-//Total tokens count logic
+// Session token tracking
 let sessionTokenCount = 0;
 
-//Add tokens to the session total.
+// Add tokens to the session total
 export function addToSessionTokenCount(tokens: number): void {
   sessionTokenCount += tokens;
 }
 
-//Reset the session token count.
+// Reset the session token count
 export function resetSessionTokenCount(): void {
   sessionTokenCount = 0;
 }
 
-//Get the current session token count.
+// Get the current session token count
 export function getSessionTokenCount(): number {
   return sessionTokenCount;
 }
