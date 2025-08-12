@@ -129,7 +129,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         if (typeof evt.value === 'boolean') {
           await vscode.workspace
             .getConfiguration(CONFIG_SECTION)
-            .update('includeFileContext', evt.value, vscode.ConfigurationTarget.Global);
+            .update('context.includeFileContext', evt.value, vscode.ConfigurationTarget.Global);
           postFileContextTokens(panel);
         }
         return;
@@ -239,17 +239,39 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
             vscode.window.showWarningMessage('No active editor.');
             return;
           }
+
           const sel = ed.selection;
+          const lineText = ed.document.lineAt(sel.active.line).text;
+          const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
+
+          const indented = evt.message
+            .split('\n')
+            .map((line: string) => leadingWhitespace + line.trimStart())
+            .join('\n');
+
           await ed.edit((edit) => {
             if (!sel.isEmpty) {
-              edit.replace(sel, evt.message!);
+              edit.replace(sel, indented);
             } else {
               const line = ed.document.lineAt(sel.active.line);
-              edit.replace(line.range, evt.message!);
+              edit.replace(line.range, indented);
             }
           });
         }
         break;
+        //Update context checkbox if changed outside of view
+        case 'requestIncludeFileContext': {
+          const value = vscode.workspace
+            .getConfiguration(CONFIG_SECTION)
+            .get<boolean>('context.includeFileContext', true);
+
+          panel.webview.postMessage({
+            type: 'includeFileContext',
+            value,
+          });
+          break;
+        }
+
     }
   });
 

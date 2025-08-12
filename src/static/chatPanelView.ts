@@ -107,7 +107,7 @@ export function getWebviewContent(
 
         shouldAutoScroll = atBottom;
         scrollBtn.style.display = atBottom ? 'none' : 'block';
-      });
+      }, { passive: true });
 
       // Flag when user manually scrolls
       ['wheel','touchstart','mousedown'].forEach(evt => {
@@ -124,10 +124,12 @@ export function getWebviewContent(
       // Keep scrolling when AI is streaming or code blocks appear
       new MutationObserver(records => {
         records.forEach(rec => {
+          // only scroll if streaming _and_ user hasn't locked it
           if (isStreaming && shouldAutoScroll) {
             scrollToBottom(true);
             return;
           }
+          // still allow scrolling on code-block injections
           rec.addedNodes.forEach(node => {
             if (node instanceof HTMLElement && node.querySelector('pre')) {
               scrollToBottom();

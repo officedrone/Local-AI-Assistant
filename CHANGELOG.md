@@ -1,6 +1,13 @@
 # Change Log
 
 
+## 0.0.7 – Retain code indentation, bugfixes
+
+- FIX: retain correct indentation when inserting code blocks
+- FIX: fix auto-scroll breaking in certain instances
+- FIX: bug where file context checkbox was referencing stale config setting URI
+
+
 ## 0.0.6 – Bugfix, Settings re-org, setup instructions
 
 - FIX: content not being passed correctly when chatting from input box

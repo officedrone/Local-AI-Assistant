@@ -15,6 +15,15 @@ export const VALIDATE_CODE_ACTION    = 'extension.validateCodeAction';
 export const COMPLETE_LINE_ACTION    = 'extension.completeCurrentLine';
 export const COMPLETE_INLINE_COMMAND = 'extension.completeCodeInline';
 
+// Utility to apply consistent indentation
+function applyIndentation(text: string, indent: string): string {
+  const normalized = text.replace(/^\s*/gm, ''); // strip leading whitespace
+  return normalized
+    .split('\n')
+    .map(line => indent + line)
+    .join('\n');
+}
+
 export function registerCodeActions(context: vscode.ExtensionContext) {
   // ——————————————————————————————————————————————————————————
   // 1) Validate Code Command
@@ -38,6 +47,11 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         ? editor.document.getText()
         : editor.document.getText(sel);
 
+      const firstLine = sel.isEmpty
+        ? editor.document.lineAt(0).text
+        : editor.document.lineAt(sel.start.line).text;
+      const leadingWhitespace = firstLine.match(/^\s*/)?.[0] ?? '';
+
       const language = await getLanguage();
 
       const messages = buildChatMessages({
@@ -49,25 +63,20 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
 
       const panel = getOrCreateChatPanel();
 
-      // Grab the full user message object
       const userMessage = messages.find(m => m.role === 'user')!;
-
-      // Count tokens and add to session total
       const tokenCount = countMessageTokens([userMessage]);
       addToSessionTokenCount(tokenCount);
 
-      // Post user bubble to webview
       panel.webview.postMessage({
         type: 'appendUser',
         message: userMessage.content,
         tokens: tokenCount
       });
+
       console.log('=== Validating prompt payload ===');
       messages.forEach((m, i) => {
         const tokCount = encodingForModel.encode(m.content).length;
         console.log(`  [${i}] ${m.role.toUpperCase()}: ${tokCount} tokens`);
-        // optionally log first 200 chars of the content:
-        // console.log(m.content.slice(0,200).replace(/\n/g,'⏎'));
       });
       console.log('  TOTAL TOKENS (no padding):', messages
         .map(m => encodingForModel.encode(m.content).length)
@@ -76,13 +85,24 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       console.log('  TOTAL TOKENS (with +4 padding each):', countMessageTokens(messages));
       console.log('================================');
 
-      await routeChatRequest({
+      const response = await routeChatRequest({
         model: vscode.workspace
           .getConfiguration(CONFIG_SECTION)
           .get<string>('model')!,
         messages,
         panel
       });
+
+      if (response) {
+        const indented = applyIndentation(response, leadingWhitespace);
+
+        editor.edit(editBuilder => {
+          const insertPos = sel.isEmpty
+            ? new vscode.Position(editor.document.lineCount, 0)
+            : sel.end;
+          editBuilder.insert(insertPos, '\n' + indented);
+        });
+      }
     }
   );
 
@@ -104,10 +124,10 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       const fileContext = includeCtx ? editor.document.getText() : undefined;
 
       const sel = editor.selection;
-      const code = sel.isEmpty
-        ? editor.document.lineAt(sel.active.line).text
-        : editor.document.getText(sel);
+      const lineText = editor.document.lineAt(sel.active.line).text;
+      const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
 
+      const code = sel.isEmpty ? lineText : editor.document.getText(sel);
       const language = await getLanguage();
 
       const messages = buildChatMessages({
@@ -119,25 +139,20 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
 
       const panel = getOrCreateChatPanel();
 
-      // Grab the full user message object
       const userMessage = messages.find(m => m.role === 'user')!;
-
-      // Count tokens and add to session total
       const tokenCount = countMessageTokens([userMessage]);
       addToSessionTokenCount(tokenCount);
 
-      // Post user bubble to webview
       panel.webview.postMessage({
         type: 'appendUser',
         message: userMessage.content,
         tokens: tokenCount
       });
+
       console.log('=== Validating prompt payload ===');
       messages.forEach((m, i) => {
         const tokCount = encodingForModel.encode(m.content).length;
         console.log(`  [${i}] ${m.role.toUpperCase()}: ${tokCount} tokens`);
-        // optionally log first 200 chars of the content:
-        // console.log(m.content.slice(0,200).replace(/\n/g,'⏎'));
       });
       console.log('  TOTAL TOKENS (no padding):', messages
         .map(m => encodingForModel.encode(m.content).length)
@@ -146,13 +161,24 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       console.log('  TOTAL TOKENS (with +4 padding each):', countMessageTokens(messages));
       console.log('================================');
 
-      await routeChatRequest({
+      const response = await routeChatRequest({
         model: vscode.workspace
           .getConfiguration(CONFIG_SECTION)
           .get<string>('model')!,
         messages,
         panel
       });
+
+      if (response) {
+        const indented = applyIndentation(response, leadingWhitespace);
+
+        editor.edit(editBuilder => {
+          const insertPos = sel.isEmpty
+            ? editor.document.lineAt(sel.active.line).range.end
+            : sel.end;
+          editBuilder.insert(insertPos, '\n' + indented);
+        });
+      }
     }
   );
 
