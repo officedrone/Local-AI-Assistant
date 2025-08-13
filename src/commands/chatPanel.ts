@@ -1,9 +1,11 @@
-// src/commands/chatPanel.ts
-
 import * as vscode from 'vscode';
-import { buildChatMessages } from './promptBuilder';
+import {
+  buildOpenAIMessages,
+  buildOllamaMessages,
+  getLanguage,
+  PromptContext
+} from './promptBuilder';
 import { getWebviewContent } from '../static/chatPanelView';
-import { fetchAvailableModels } from '../api/openaiProxy';
 import encodingForModel from 'gpt-tokenizer';
 import {
   countMessageTokens,
@@ -14,7 +16,7 @@ import {
   resetSessionTokenCount,
   getChatTokenCount
 } from './tokenActions';
-
+import { routeChatRequest } from '../api/apiRouter';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -33,10 +35,6 @@ function getCodeEditor(): vscode.TextEditor | undefined {
   );
 }
 
-/**
- * Called on extension activation. Registers the `openChatPanel` command and wires up VSCode events
- * so file‐context token count is continuously pushed.
- */
 export function registerChatPanelCommand(context: vscode.ExtensionContext) {
   extensionContext = context;
 
@@ -51,17 +49,17 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
 
   // When the user switches editors, recalc & push tokens
   context.subscriptions.push(
-  vscode.window.onDidChangeActiveTextEditor(editor => {
+    vscode.window.onDidChangeActiveTextEditor(editor => {
     // only fire when there's a normal text editor in focus
-    if (
-      chatPanel &&
-      editor &&                                         
-      editor.document.uri.scheme !== 'vscode-webview'     
-    ) {
-      postFileContextTokens(chatPanel);
-    }
-  })
-);
+      if (
+        chatPanel &&
+        editor &&
+        editor.document.uri.scheme !== 'vscode-webview'
+      ) {
+        postFileContextTokens(chatPanel);
+      }
+    })
+  );
 
   // Register the "Open Chat" command
   context.subscriptions.push(
@@ -91,9 +89,6 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
     chatPanel.reveal(vscode.ViewColumn.Two);
     postFileContextTokens(chatPanel);
     postSessionTokenUpdate(chatPanel, getSessionTokenCount(), lastFileContextTokens);
-
-
-
     return chatPanel;
   }
 
@@ -136,14 +131,12 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
       case 'sendToAI': {
         const userMessage = evt.message?.trim();
-        if (!userMessage) {
-          return;
-        }
+        if (!userMessage) return;
 
-        // optionally grab the current file's text
-        const includeCtx = vscode.workspace
-          .getConfiguration(CONFIG_SECTION)
-          .get<boolean>('includeFileContext', true);
+        const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+        const includeCtx = config.get<boolean>('includeFileContext', true);
+        const apiType = config.get<string>('apiType', 'openai');
+        const model = config.get<string>('model') || '';
 
         let fileContext: string | undefined;
         if (includeCtx) {
@@ -153,31 +146,29 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
           }
         }
 
-        const model = vscode.workspace
-          .getConfiguration(CONFIG_SECTION)
-          .get<string>('model') || '';
-
         const userTokens = countTextTokens(userMessage);
         addToSessionTokenCount(userTokens);
 
         // build chat messages and append to conversation history (system prompt only in first message)
         if (conversation.length === 0) {
-          conversation.push(
-            ...buildChatMessages({
-              code: userMessage,
-              mode: 'chat',
-              fileContext,
-            })
-          );
+          const promptContext: PromptContext = {
+            code: userMessage,
+            mode: 'chat',
+            fileContext
+          };
+
+          const initialMessages = apiType === 'ollama'
+            ? buildOllamaMessages(promptContext)
+            : buildOpenAIMessages(promptContext);
+
+          conversation.push(...initialMessages);
         } else {
           conversation.push({ role: 'user', content: userMessage });
         }
 
         // check total token budget
         const total = countMessageTokens(conversation);
-        const maxTokens = vscode.workspace
-          .getConfiguration(CONFIG_SECTION)
-          .get<number>('maxTokens', 4096);
+        const maxTokens = config.get<number>('maxTokens', 4096);
 
         if (total > maxTokens) {
           vscode.window.showWarningMessage(
@@ -194,14 +185,19 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
         postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
 
-        // stream the assistant response
-        await handleAiRequest(conversation, model, panel);
+        const controller = new AbortController();
+        abortControllers.set(panel, controller);
 
-        // Push content count for context after response
+        await routeChatRequest({
+          model,
+          messages: conversation,
+          signal: controller.signal,
+          panel
+        });
+
         postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
         break;
       }
-
 
       case 'stopGeneration':
         abortControllers.get(panel)?.abort();
@@ -216,11 +212,11 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
       case 'newSession':
         resetSessionTokenCount();
-        conversation = [];                // clear in-memory history
-        lastFileContextTokens = 0;        // reset file context count if desired
+        conversation = [];
+        lastFileContextTokens = 0;
 
         chatPanel?.dispose();
-        chatPanel = undefined;            // force fresh creation
+        chatPanel = undefined;
 
         chatPanel = getOrCreateChatPanel();
         lastFileContextTokens = getFileContextTokens();
@@ -260,31 +256,27 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         }
         break;
         //Update context checkbox if changed outside of view
-        case 'requestIncludeFileContext': {
-          const value = vscode.workspace
-            .getConfiguration(CONFIG_SECTION)
-            .get<boolean>('context.includeFileContext', true);
+      case 'requestIncludeFileContext': {
+        const value = vscode.workspace
+          .getConfiguration(CONFIG_SECTION)
+          .get<boolean>('context.includeFileContext', true);
 
-          panel.webview.postMessage({
-            type: 'includeFileContext',
-            value,
-          });
-          break;
-        }
-
+        panel.webview.postMessage({
+          type: 'includeFileContext',
+          value,
+        });
+        break;
+      }
     }
   });
-
   return chatPanel;
 }
 
 
 //Sends both `tokens` and `maxTokens` to the webview so it can render "Current file in context X of Y".
 function postFileContextTokens(panel: vscode.WebviewPanel) {
-  const editor = getCodeEditor();  
-  const tokens = editor
-    ? countTextTokens(editor.document.getText())
-    : 0;
+  const editor = getCodeEditor();
+  const tokens = editor ? countTextTokens(editor.document.getText()) : 0;
   lastFileContextTokens = tokens;
   const maxTokens = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
@@ -296,109 +288,4 @@ function postFileContextTokens(panel: vscode.WebviewPanel) {
     maxTokens,
   });
   postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
-}
-
-
-
- //Streams a chat completion, relays start/stream/end events back to the webview.
- export async function handleAiRequest(
-  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
-  model: string,
-  panel: vscode.WebviewPanel
-) {
-  const controller = new AbortController();
-  abortControllers.set(panel, controller);
-
-  panel.webview.postMessage({ type: 'startStream', message: '' });
-
-  const endpoint = vscode.workspace
-    .getConfiguration(CONFIG_SECTION)
-    .get<string>('endpoint')!;
-
-  try {
-    const resp = await fetch(`${endpoint}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, stream: true, messages }),
-      signal: controller.signal,
-    });
-
-    if (!resp.ok || !resp.body) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let done = false;
-    let assistantText = '';
-
-    while (!done) {
-      const { value, done: doneReading } = await reader.read();
-      done = doneReading;
-      if (value) {
-        const chunk = decoder.decode(value);
-        for (const part of chunk.split(/\n\n/)) {
-          const m = part.match(/^data:\s*(.*)$/);
-          if (m && m[1] !== '[DONE]') {
-            try {
-              const parsed = JSON.parse(m[1]);
-              const delta = parsed.choices?.[0]?.delta?.content ?? '';
-              assistantText += delta;
-              const deltaTokens = countTextTokens(delta);
-              addToSessionTokenCount(deltaTokens);
-
-              // Push streaming token update
-              postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
-              panel.webview.postMessage({
-                type: 'streamChunk',
-                message: delta,
-              });
-            } catch {
-            }
-          }
-        }
-      }
-    }
-
-    panel.webview.postMessage({ type: 'endStream', message: '' });
-
-    const assistantTokens = encodingForModel.encode(assistantText).length;
-
-    panel.webview.postMessage({
-      type: 'finalizeAI',
-      tokens: assistantTokens,
-    });
-    postSessionTokenUpdate(panel, getSessionTokenCount(), lastFileContextTokens);
-
-
-    messages.push({ role: 'assistant', content: assistantText });
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      panel.webview.postMessage({ type: 'stoppedStream', message: '' });
-      return;
-    }
-    console.error('AI request error:', err);
-
-    let errMsg: string;
-    try {
-      const models = await fetchAvailableModels();
-      errMsg = models.length
-        ? '🚦 LLM service is reachable but no model seems to be loaded.'
-        : '🔌 LLM service may be offline or misconfigured.';
-    } catch {
-      errMsg = '🔌 LLM service may be offline or misconfigured.';
-    }
-
-    vscode.window
-      .showErrorMessage(errMsg, 'Open Settings')
-      .then((sel) => {
-        if (sel === 'Open Settings') {
-          vscode.commands.executeCommand('extension.openChatPanel');
-          vscode.commands.executeCommand(
-            'workbench.action.openSettings',
-            '@ext:officedrone.local-ai-assistant'
-          );
-        }
-      });
-  }
 }

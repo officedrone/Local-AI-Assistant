@@ -30,18 +30,14 @@ export async function getLanguage(): Promise<string> {
 }
 
 /**
- * Construct a chat-style message array for the LLM.
- * - In "chat" mode, uses a generic assistant prompt + your input.
- * - In "validate" or "complete" modes, applies static templates.
- * If fileContext is provided, it’s appended to the system prompt in all modes.
+ * Build messages for OpenAI's chat endpoint.
  */
-export function buildChatMessages({
+export function buildOpenAIMessages({
   code,
   mode,
   fileContext,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
-  // Build the base system prompt
   let systemPrompt: string;
 
   if (mode === 'chat') {
@@ -56,7 +52,6 @@ export function buildChatMessages({
     systemPrompt = completionPrompt(code, fileContext, language);
   }
 
-  // Build the user prompt
   let userPrompt: string;
   if (mode === 'chat') {
     userPrompt = code.trim();
@@ -66,7 +61,40 @@ export function buildChatMessages({
     userPrompt = userCompletionMessage(code, language);
   }
 
-  // Return the two-message array
+  return [
+    { role: 'system', content: systemPrompt.trim() },
+    { role: 'user',   content: userPrompt }
+  ];
+}
+
+/**
+ * Build messages for Ollama's chat endpoint.
+ * Simpler prompt, avoids verbose instructions and file context.
+ */
+export function buildOllamaMessages({
+  code,
+  mode,
+  language = 'plaintext'
+}: PromptContext): { role: 'system' | 'user'; content: string }[] {
+  let systemPrompt: string;
+
+  if (mode === 'chat') {
+    systemPrompt = `You are a coding assistant. Answer concisely. Language: ${language}.`;
+  } else if (mode === 'validate') {
+    systemPrompt = validationPrompt(code, undefined, language);
+  } else {
+    systemPrompt = completionPrompt(code, undefined, language);
+  }
+
+  let userPrompt: string;
+  if (mode === 'chat') {
+    userPrompt = code.trim();
+  } else if (mode === 'validate') {
+    userPrompt = userValidationMessage(code, language);
+  } else {
+    userPrompt = userCompletionMessage(code, language);
+  }
+
   return [
     { role: 'system', content: systemPrompt.trim() },
     { role: 'user',   content: userPrompt }

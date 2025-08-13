@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { buildChatMessages, getLanguage } from './promptBuilder';
+import {
+  buildOpenAIMessages,
+  buildOllamaMessages,
+  getLanguage,
+  PromptContext
+} from './promptBuilder';
 import { getOrCreateChatPanel } from './chatPanel';
 import { routeChatRequest } from '../api/apiRouter';
 import encodingForModel from 'gpt-tokenizer';
@@ -15,9 +20,8 @@ export const VALIDATE_CODE_ACTION    = 'extension.validateCodeAction';
 export const COMPLETE_LINE_ACTION    = 'extension.completeCurrentLine';
 export const COMPLETE_INLINE_COMMAND = 'extension.completeCodeInline';
 
-// Utility to apply consistent indentation
 function applyIndentation(text: string, indent: string): string {
-  const normalized = text.replace(/^\s*/gm, ''); // strip leading whitespace
+  const normalized = text.replace(/^\s*/gm, '');
   return normalized
     .split('\n')
     .map(line => indent + line)
@@ -25,9 +29,6 @@ function applyIndentation(text: string, indent: string): string {
 }
 
 export function registerCodeActions(context: vscode.ExtensionContext) {
-  // ——————————————————————————————————————————————————————————
-  // 1) Validate Code Command
-  // ——————————————————————————————————————————————————————————
   const validateCmd = vscode.commands.registerCommand(
     VALIDATE_CODE_ACTION,
     async () => {
@@ -37,9 +38,10 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         return;
       }
 
-      const includeCtx = vscode.workspace
-        .getConfiguration(CONFIG_SECTION)
-        .get<boolean>('includeFileContext', true);
+      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+      const includeCtx = config.get<boolean>('includeFileContext', true);
+      const apiType = config.get<string>('apiType', 'openai');
+      const model = config.get<string>('model')!;
       const fileContext = includeCtx ? editor.document.getText() : undefined;
 
       const sel = editor.selection;
@@ -54,12 +56,16 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
 
       const language = await getLanguage();
 
-      const messages = buildChatMessages({
+      const promptContext: PromptContext = {
         code,
         mode: 'validate',
         fileContext,
         language
-      });
+      };
+
+      const messages = apiType === 'ollama'
+        ? buildOllamaMessages(promptContext)
+        : buildOpenAIMessages(promptContext);
 
       const panel = getOrCreateChatPanel();
 
@@ -85,17 +91,10 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       console.log('  TOTAL TOKENS (with +4 padding each):', countMessageTokens(messages));
       console.log('================================');
 
-      const response = await routeChatRequest({
-        model: vscode.workspace
-          .getConfiguration(CONFIG_SECTION)
-          .get<string>('model')!,
-        messages,
-        panel
-      });
+      const response = await routeChatRequest({ model, messages, panel });
 
       if (response) {
         const indented = applyIndentation(response, leadingWhitespace);
-
         editor.edit(editBuilder => {
           const insertPos = sel.isEmpty
             ? new vscode.Position(editor.document.lineCount, 0)
@@ -106,9 +105,6 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
     }
   );
 
-  // ——————————————————————————————————————————————————————————
-  // 2) Complete Current Line Command
-  // ——————————————————————————————————————————————————————————
   const completeCmd = vscode.commands.registerCommand(
     COMPLETE_LINE_ACTION,
     async () => {
@@ -118,9 +114,10 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         return;
       }
 
-      const includeCtx = vscode.workspace
-        .getConfiguration(CONFIG_SECTION)
-        .get<boolean>('includeFileContext', true);
+      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+      const includeCtx = config.get<boolean>('includeFileContext', true);
+      const apiType = config.get<string>('apiType', 'openai');
+      const model = config.get<string>('model')!;
       const fileContext = includeCtx ? editor.document.getText() : undefined;
 
       const sel = editor.selection;
@@ -130,12 +127,16 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       const code = sel.isEmpty ? lineText : editor.document.getText(sel);
       const language = await getLanguage();
 
-      const messages = buildChatMessages({
+      const promptContext: PromptContext = {
         code,
         mode: 'complete',
         fileContext,
         language
-      });
+      };
+
+      const messages = apiType === 'ollama'
+        ? buildOllamaMessages(promptContext)
+        : buildOpenAIMessages(promptContext);
 
       const panel = getOrCreateChatPanel();
 
@@ -149,7 +150,7 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         tokens: tokenCount
       });
 
-      console.log('=== Validating prompt payload ===');
+      console.log('=== Completion prompt payload ===');
       messages.forEach((m, i) => {
         const tokCount = encodingForModel.encode(m.content).length;
         console.log(`  [${i}] ${m.role.toUpperCase()}: ${tokCount} tokens`);
@@ -161,17 +162,10 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       console.log('  TOTAL TOKENS (with +4 padding each):', countMessageTokens(messages));
       console.log('================================');
 
-      const response = await routeChatRequest({
-        model: vscode.workspace
-          .getConfiguration(CONFIG_SECTION)
-          .get<string>('model')!,
-        messages,
-        panel
-      });
+      const response = await routeChatRequest({ model, messages, panel });
 
       if (response) {
         const indented = applyIndentation(response, leadingWhitespace);
-
         editor.edit(editBuilder => {
           const insertPos = sel.isEmpty
             ? editor.document.lineAt(sel.active.line).range.end

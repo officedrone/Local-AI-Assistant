@@ -4,7 +4,7 @@ const CONFIG_SECTION = 'localAIAssistant';
 
 export interface ChatRequestOptions {
   model: string;
-  messages: { role: 'system' | 'user'; content: string }[];
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   signal?: AbortSignal;
 }
 
@@ -21,7 +21,83 @@ function normalizeOpenAIEndpoint(endpoint: string): string {
   return endpoint.includes('/v1') ? endpoint : `${endpoint.replace(/\/$/, '')}/v1`;
 }
 
-// Send chat request to OpenAI-compatible endpoint
+// ✅ Streaming support
+export async function streamFromOpenAI({
+  model,
+  messages,
+  signal,
+  onToken,
+  onDone,
+}: {
+  model: string;
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+  signal?: AbortSignal;
+  onToken: (token: string) => void;
+  onDone?: () => void;
+}): Promise<void> {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const endpoint = config.get<string>('endpoint');
+
+  if (!endpoint) throw new Error('No endpoint configured');
+
+  const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
+  const apiKey = config.get<string>('apiKey') ??
+    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
+
+  const res = await fetch(`${normalizedEndpoint}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true
+    }),
+    signal
+  });
+
+  if (!res.ok) throw new Error(`OpenAI streaming failed: ${res.status}`);
+
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder();
+
+  if (!reader) throw new Error('No response body from OpenAI');
+
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (!line.trim().startsWith('data:')) continue;
+
+      const jsonStr = line.replace(/^data:\s*/, '');
+      if (jsonStr === '[DONE]') {
+        if (onDone) onDone();
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(jsonStr);
+        const token = parsed?.choices?.[0]?.delta?.content;
+        if (token) onToken(token);
+      } catch (err) {
+        console.warn('Failed to parse OpenAI stream chunk:', line);
+      }
+    }
+  }
+
+  if (onDone) onDone();
+}
+
+// ✅ Non-streaming fallback
 export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptions): Promise<string> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const endpoint = config.get<string>('endpoint');
@@ -67,12 +143,12 @@ export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptio
   }
 }
 
-// Fetch available models
-export async function fetchAvailableModels(): Promise<string[]> {
+// ✅ Fetch available models
+export async function fetchOpenAiModels(): Promise<string[]> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const endpoint = config.get<string>('endpoint');
   const apiKey = config.get<string>('apiKey') ??
-    await vscode.extensions.getExtension('your.extension.id')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
+    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
 
   if (!endpoint) {
     vscode.window.showErrorMessage('❌ No endpoint configured.');

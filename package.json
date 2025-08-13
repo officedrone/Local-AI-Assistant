@@ -137,7 +137,7 @@
         "localAIAssistant.apiLLM.config.model": {
           "type": "string",
           "default": "",
-          "description": "(Optinal unless your service requires it) Model to use for completions and chat requests, e.g.: qwen2.5-coder-7b-instruct."
+          "description": "(Optinal unless your service requires it) Model to use for completions and chat requests. If you are not sure of the model you can try select a model your service supports by pressing CTRL+SHIFT+ALT+M (CTL+SHIFT+ALT+M on Mac)"
         },
         "localAIAssistant.context.contextSize": {
           "type": "number",
