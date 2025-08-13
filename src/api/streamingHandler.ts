@@ -1,21 +1,24 @@
+// src/api/streamingHandler.ts
+
 import * as vscode from 'vscode';
 import { sendToOpenAI, streamFromOpenAI } from './openaiProxy';
 import { streamFromOllama } from './ollamaProxy';
 import encodingForModel from 'gpt-tokenizer';
-import {
-  addToSessionTokenCount,
-  getSessionTokenCount
-} from '../commands/tokenActions';
 
-type AnyMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-};
+export interface StreamingResponseOptions {
+  model: string;
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+  signal?: AbortSignal;
+  panel: vscode.WebviewPanel;
+  apiType: string;
 
-type OllamaMessage = {
-  role: 'system' | 'user';
-  content: string;
-};
+  // callbacks for each chunk and stream completion
+  onToken?: (chunk: string) => void;
+  onDone?: () => void;
+}
+
+type AnyMessage = StreamingResponseOptions['messages'][number];
+type OllamaMessage = { role: 'system' | 'user'; content: string };
 
 function filterOllamaMessages(messages: AnyMessage[]): OllamaMessage[] {
   return messages.filter((m): m is OllamaMessage => m.role !== 'assistant');
@@ -27,46 +30,37 @@ export async function handleStreamingResponse({
   signal,
   panel,
   apiType,
-}: {
-  model: string;
-  messages: AnyMessage[];
-  signal?: AbortSignal;
-  panel: vscode.WebviewPanel;
-  apiType: string;
-}): Promise<void> {
+  onToken,
+  onDone,
+}: StreamingResponseOptions): Promise<void> {
   panel.webview.postMessage({ type: 'startStream', message: '' });
 
+  let assistantText = '';
+
+  // helper to finalize the stream
+  const finalize = () => {
+    panel.webview.postMessage({ type: 'endStream', message: '' });
+    messages.push({ role: 'assistant', content: assistantText });
+
+    // notify caller that streaming is done
+    if (onDone) onDone();
+  };
+
   try {
-    let assistantText = '';
-
-    const finalize = () => {
-      const assistantTokens = encodingForModel.encode(assistantText).length;
-      addToSessionTokenCount(assistantTokens);
-
-      panel.webview.postMessage({ type: 'finalizeAI', tokens: assistantTokens });
-      panel.webview.postMessage({ type: 'endStream', message: '' });
-      panel.webview.postMessage({
-        type: 'sessionTokenUpdate',
-        sessionTokens: getSessionTokenCount(),
-        fileContextTokens: 0,
-        totalTokens: getSessionTokenCount(),
-      });
-
-      messages.push({ role: 'assistant', content: assistantText });
-    };
-
     if (apiType === 'ollama') {
       const ollamaMessages = filterOllamaMessages(messages);
-
       await streamFromOllama({
         model,
         messages: ollamaMessages,
         signal,
-        onToken: (token) => {
-          assistantText += token;
-          panel.webview.postMessage({ type: 'streamChunk', message: token });
+        onToken: (chunk: string) => {
+          assistantText += chunk;
+          panel.webview.postMessage({ type: 'streamChunk', message: chunk });
+
+          // notify caller of each chunk
+          if (onToken) onToken(chunk);
         },
-        onDone: finalize
+        onDone: finalize,
       });
     } else {
       try {
@@ -74,25 +68,31 @@ export async function handleStreamingResponse({
           model,
           messages,
           signal,
-          onToken: (token) => {
-            assistantText += token;
-            panel.webview.postMessage({ type: 'streamChunk', message: token });
+          onToken: (chunk: string) => {
+            assistantText += chunk;
+            panel.webview.postMessage({ type: 'streamChunk', message: chunk });
+
+            // notify caller of each chunk
+            if (onToken) onToken(chunk);
           },
-          onDone: finalize
+          onDone: finalize,
         });
       } catch (streamErr) {
-        console.warn('⚠️ OpenAI streaming failed, falling back to non-streaming:', streamErr);
+        console.warn(
+          '⚠️ OpenAI streaming failed, falling back to non‐streaming:',
+          streamErr
+        );
 
         const response = await sendToOpenAI({ model, messages, signal });
-
         if (response.startsWith('Error:')) {
           panel.webview.postMessage({ type: 'endStream', message: '' });
           return;
         }
 
+        // fallback full response
         assistantText = response;
-        finalize();
         panel.webview.postMessage({ type: 'streamChunk', message: assistantText });
+        finalize();
       }
     }
   } catch (err: any) {
@@ -105,7 +105,10 @@ export async function handleStreamingResponse({
     panel.webview.postMessage({ type: 'endStream', message: '' });
 
     await vscode.window
-      .showErrorMessage('🔌 LLM service may be offline or misconfigured.', 'Open Settings')
+      .showErrorMessage(
+        '🔌 LLM service may be offline or misconfigured.',
+        'Open Settings'
+      )
       .then((sel) => {
         if (sel === 'Open Settings') {
           vscode.commands.executeCommand(

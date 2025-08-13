@@ -193,6 +193,13 @@ export function getWebviewContent(
             scrollToBottom();
             break;
 
+          // handle any non‐streaming assistant bubbles (static responses)
+          case 'appendAssistant':
+            if (!isStreaming && message && typeof tokens === 'number') {
+              appendBubble(message, 'ai-message', tokens);
+            }
+            break;
+
           case 'endStream':
           case 'stoppedStream':
             isStreaming = false;

@@ -1,3 +1,5 @@
+// src/api/apiRouter.ts
+
 import * as vscode from 'vscode';
 import { sendToOpenAI, fetchOpenAiModels } from './openaiProxy';
 import { sendToOllama, fetchOllamaTags } from './ollamaProxy';
@@ -8,6 +10,10 @@ export interface ChatRequestOptions {
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   signal?: AbortSignal;
   panel?: vscode.WebviewPanel;
+
+  // callbacks for streaming chunks & completion
+  onToken?: (chunk: string) => void;
+  onDone?: () => void;
 }
 
 export async function routeChatRequest({
@@ -15,37 +21,49 @@ export async function routeChatRequest({
   messages,
   signal,
   panel,
+  onToken,
+  onDone,
 }: ChatRequestOptions): Promise<string | void> {
   const cfg = vscode.workspace.getConfiguration('localAIAssistant.apiLLM.config');
   const apiTypeRaw = cfg.get<string>('apiType', 'OpenAI');
   const apiType = apiTypeRaw.toLowerCase();
+  const trimmedModel = model?.trim() ?? '';
 
-  const trimmedModel = model?.trim(); // model is optional
-
-  // ✅ Streaming path
+  // streaming path
   if (panel) {
     await handleStreamingResponse({
-      model: trimmedModel ?? '', // pass empty string if undefined
+      model: trimmedModel,
       messages,
       signal,
       panel,
       apiType,
+      onToken,
+      onDone,
     });
     return;
   }
 
-  // ✅ Non-streaming fallback
+  // non-streaming fallback
   try {
     let response: string;
 
     if (apiType === 'ollama') {
+      // Ollama doesn’t accept "assistant" roles in the prompt
       const ollamaMessages = messages.filter(
         (m): m is { role: 'system' | 'user'; content: string } =>
           m.role !== 'assistant'
       );
-      response = await sendToOllama({ model: trimmedModel ?? '', messages: ollamaMessages, signal });
+      response = await sendToOllama({
+        model: trimmedModel,
+        messages: ollamaMessages,
+        signal,
+      });
     } else {
-      response = await sendToOpenAI({ model: trimmedModel ?? '', messages, signal });
+      response = await sendToOpenAI({
+        model: trimmedModel,
+        messages,
+        signal,
+      });
     }
 
     if (response.startsWith('Error:')) {
@@ -76,8 +94,6 @@ export async function fetchAvailableModels(): Promise<string[]> {
     return [];
   }
 }
-
-// Removed getDefaultModel — no longer needed
 
 async function showHealthMessage(apiType: string) {
   let serviceUp = false;
