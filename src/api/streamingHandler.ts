@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { sendToOpenAI, streamFromOpenAI } from './openaiProxy';
 import { streamFromOllama } from './ollamaProxy';
 import encodingForModel from 'gpt-tokenizer';
+import { isStreamingActive } from '../commands/tokenActions';
 
 export interface StreamingResponseOptions {
   model: string;
@@ -33,16 +34,37 @@ export async function handleStreamingResponse({
   onToken,
   onDone,
 }: StreamingResponseOptions): Promise<void> {
+
+  // Notify the webview we're starting a new stream
   panel.webview.postMessage({ type: 'startStream', message: '' });
 
   let assistantText = '';
 
-  // helper to finalize the stream
+  // Guard so finalize() can only run one time
+  let didFinalize = false;
   const finalize = () => {
+    if (didFinalize) return;
+    didFinalize = true;
+
+    // If the stream was stopped, don't finalize UI tokens or append to history
+    if (!isStreamingActive(panel)) {
+      panel.webview.postMessage({ type: 'stoppedStream', message: '' });
+      return;
+    }
+
+    // Send the one-and-only finalizeAI token count
+    panel.webview.postMessage({
+      type: 'finalizeAI',
+      tokens: encodingForModel.encode(assistantText).length
+    });
+
+    // Close out the stream
     panel.webview.postMessage({ type: 'endStream', message: '' });
+
+    // Add to conversation history
     messages.push({ role: 'assistant', content: assistantText });
 
-    // notify caller that streaming is done
+    // Notify upstream that streaming is done
     if (onDone) onDone();
   };
 
@@ -54,10 +76,11 @@ export async function handleStreamingResponse({
         messages: ollamaMessages,
         signal,
         onToken: (chunk: string) => {
+          // Drop late chunks after Stop
+          if (!isStreamingActive(panel) || signal?.aborted) return;
+
           assistantText += chunk;
           panel.webview.postMessage({ type: 'streamChunk', message: chunk });
-
-          // notify caller of each chunk
           if (onToken) onToken(chunk);
         },
         onDone: finalize,
@@ -69,10 +92,11 @@ export async function handleStreamingResponse({
           messages,
           signal,
           onToken: (chunk: string) => {
+            // Drop late chunks after Stop
+            if (!isStreamingActive(panel) || signal?.aborted) return;
+
             assistantText += chunk;
             panel.webview.postMessage({ type: 'streamChunk', message: chunk });
-
-            // notify caller of each chunk
             if (onToken) onToken(chunk);
           },
           onDone: finalize,
@@ -89,7 +113,7 @@ export async function handleStreamingResponse({
           return;
         }
 
-        // fallback full response
+        // Fallback full response path
         assistantText = response;
         panel.webview.postMessage({ type: 'streamChunk', message: assistantText });
         finalize();
@@ -97,6 +121,7 @@ export async function handleStreamingResponse({
     }
   } catch (err: any) {
     if (err.name === 'AbortError') {
+      // UI already guarded; just inform webview explicitly
       panel.webview.postMessage({ type: 'stoppedStream', message: '' });
       return;
     }

@@ -72,244 +72,325 @@ export function getWebviewContent(
   </div>
 
   <script src="${mdItUri}"></script>
-  <script>
-    (function() {
-      const vscode = acquireVsCodeApi();
-      const chat = document.getElementById('chat-container');
-      const scrollBtn = document.getElementById('scrollToBottomButton');
-      const input = document.getElementById('messageInput');
-      const sendBtn = document.getElementById('sendButton');
-      const settingsBtn = document.getElementById('settingsButton');
-      const newSessionBtn = document.getElementById('newSessionButton');
-      const contextCheckbox = document.getElementById('contextCheckbox');
-      const md = window.markdownit({ html: false, linkify: true, typographer: true });
+<script>
+  (function () {
+    const vscode = acquireVsCodeApi();
+    const chat = document.getElementById('chat-container');
+    const scrollBtn = document.getElementById('scrollToBottomButton');
+    const input = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendButton');
+    const settingsBtn = document.getElementById('settingsButton');
+    const newSessionBtn = document.getElementById('newSessionButton');
+    const contextCheckbox = document.getElementById('contextCheckbox');
+    const md = window.markdownit({ html: false, linkify: true, typographer: true });
 
-      let shouldAutoScroll = true;
-      let userInitiatedScroll = false;
-      let isStreaming = false;
-      let assistantRaw = '';
-      let assistantElem = null;
+    // Auto-scroll state
+    let shouldAutoScroll = true;         // We want to stick to bottom by default
+    let userInitiatedScroll = false;     // Set to true only when user actively scrolls up
+    let isStreaming = false;
 
-      // Smooth scroll helper
-      function scrollToBottom(force = false) {
-        if (!force && !shouldAutoScroll) return;
-        chat.scrollTo({ top: chat.scrollHeight, behavior: 'smooth' });
-        scrollBtn.style.display = 'none';
-      }
+    // Current assistant message under construction
+    let assistantRaw = '';
+    let assistantElem = null;
 
-      // Track scroll position and show/hide scroll button
-      chat.addEventListener('scroll', () => {
-        const buffer = 5;
-        const atBottom = chat.scrollTop + chat.clientHeight >= chat.scrollHeight - buffer;
+    // Threshold within which we consider "at bottom" (px)
+    const BOTTOM_THRESHOLD = 48;
 
-        // Ignore minor scrolls until user explicitly scrolls
-        if (!userInitiatedScroll && !atBottom) return;
+    // Smooth behavior is nice for user-triggered jumps, but streaming prefers immediate
+    function scrollToBottom(force = false, behavior = 'auto') {
+      if (!force && !shouldAutoScroll) return;
+      chat.scrollTo({ top: chat.scrollHeight, behavior });
+      scrollBtn.style.display = 'none';
+    }
 
+    // Convenience for streaming: avoid queueing smooth scrolls during rapid updates
+    function scrollToBottomImmediate(force = false) {
+      scrollToBottom(force, 'auto');
+    }
+
+    chat.addEventListener(
+      'scroll',
+      function () {
+        const atBottom =
+          chat.scrollTop + chat.clientHeight >= chat.scrollHeight - BOTTOM_THRESHOLD;
+
+        // If user isn't interacting and we're not at bottom, don't toggle auto-scroll off
+        // This prevents layout-driven scroll events from disabling auto-scroll.
+        if (!userInitiatedScroll && !atBottom) {
+          scrollBtn.style.display = 'block';
+          return;
+        }
+
+        // When user is interacting, only disable auto-scroll if they have moved away from bottom.
+        // Re-enable auto-scroll automatically once they return to bottom.
         shouldAutoScroll = atBottom;
-        scrollBtn.style.display = atBottom ? 'none' : 'block';
-      }, { passive: true });
 
-      // Flag when user manually scrolls
-      ['wheel','touchstart','mousedown'].forEach(evt => {
-        chat.addEventListener(evt, () => { userInitiatedScroll = true; }, { passive: true });
-      });
-
-      // Re-enable auto-scroll on button click
-      scrollBtn.onclick = () => {
-        shouldAutoScroll = true;
-        userInitiatedScroll = false;
-        scrollToBottom(true);
-      };
-
-      // Keep scrolling when AI is streaming or code blocks appear
-      new MutationObserver(records => {
-        records.forEach(rec => {
-          // only scroll if streaming _and_ user hasn't locked it
-          if (isStreaming && shouldAutoScroll) {
-            scrollToBottom(true);
-            return;
-          }
-          // still allow scrolling on code-block injections
-          rec.addedNodes.forEach(node => {
-            if (node instanceof HTMLElement && node.querySelector('pre')) {
-              scrollToBottom();
-            }
-          });
-        });
-      }).observe(chat, { childList: true, subtree: true });
-
-      function renderMd(text) {
-        return md.render(text);
-      }
-
-      function injectLinks(container) {
-        container.querySelectorAll('pre').forEach(pre => {
-          const codeText = pre.innerText;
-          ['copy','insert'].forEach(label => {
-            const a = document.createElement('a');
-            a.href = '#';
-            a.className = label + '-link';
-            a.textContent = label.charAt(0).toUpperCase() + label.slice(1);
-            a.dataset.code = codeText;
-            pre.parentNode.insertBefore(a, pre);
-          });
-        });
-      }
-
-      function appendBubble(raw, cls, tokenCount = null) {
-        const bubble = document.createElement('div');
-        bubble.className = 'message ' + cls;
-        const prefix = cls === 'user-message' ? 'You:' : 'Assistant:';
-        bubble.innerHTML = \`
-          <div class="markdown-body">
-            <strong>\${prefix}</strong><br/>\${renderMd(raw)}
-            \${tokenCount != null
-              ? '<div class="token-count">🧮 ' + tokenCount + ' tokens</div>'
-              : ''}
-          </div>\`;
-        injectLinks(bubble);
-        chat.appendChild(bubble);
-        scrollToBottom();
-        return bubble;
-      }
-
-      window.addEventListener('message', ev => {
-        const { type, message, tokens, sessionTokens, fileContextTokens, totalTokens } = ev.data;
-        switch (type) {
-          case 'startStream':
-            isStreaming = true;
-            assistantRaw = '';
-            assistantElem = appendBubble('…', 'ai-message thinking');
-            sendBtn.textContent = 'Stop';
-            break;
-
-          case 'streamChunk':
-            if (assistantElem?.classList.contains('thinking'))
-              assistantElem.classList.remove('thinking');
-            assistantRaw += message;
-            assistantElem.querySelector('.markdown-body').innerHTML =
-              '<strong>Assistant:</strong><br/>' + renderMd(assistantRaw);
-            injectLinks(assistantElem);
-            scrollToBottom();
-            break;
-
-          // handle any non‐streaming assistant bubbles (static responses)
-          case 'appendAssistant':
-            if (!isStreaming && message && typeof tokens === 'number') {
-              appendBubble(message, 'ai-message', tokens);
-            }
-            break;
-
-          case 'endStream':
-          case 'stoppedStream':
-            isStreaming = false;
-            sendBtn.textContent = 'Send';
-            break;
-
-          case 'appendUser':
-            if (message && typeof tokens === 'number') {
-              appendBubble(message, 'user-message', tokens);
-            }
-            break;
-
-          case 'fileContextTokens': {
-            const span = document.getElementById('contextTokenCount');
-            if (span && typeof tokens === 'number') {
-              span.textContent = \`(\${tokens} tokens)\`;
-              span.style.color = tokens > ${maxTokens} ? 'red' : '';
-            }
-            break;
-          }
-
-          case 'finalizeAI':
-            if (assistantElem && typeof tokens === 'number') {
-              const tdiv = document.createElement('div');
-              tdiv.className = 'token-count';
-              tdiv.textContent = \`🧮 \${tokens} tokens\`;
-              assistantElem.querySelector('.markdown-body').appendChild(tdiv);
-            }
-            break;
-
-          case 'sessionTokenUpdate': {
-            document.getElementById('sessionTokenCount').textContent = String(sessionTokens);
-            document.getElementById('fileTokenCount').textContent = String(fileContextTokens);
-            const totalSpan = document.getElementById('totalTokenCount');
-            totalSpan.textContent = String(totalTokens);
-            totalSpan.style.color = totalTokens > ${maxTokens} ? 'orange' : '';
-            break;
-          }
-
-          default:
-            console.warn('Unknown message type:', type);
-        }
-      });
-
-      sendBtn.onclick = () => {
-        if (sendBtn.textContent === 'Send') {
-          const txt = input.value.trim();
-          if (!txt) return;
-          input.value = '';
-          sendBtn.textContent = 'Stop';
+        // If we've returned to bottom, consider user "not scrolling" anymore.
+        if (atBottom) {
           userInitiatedScroll = false;
-          vscode.postMessage({
-            type: 'sendToAI',
-            message: txt,
-            useFileContext: contextCheckbox.checked
-          });
-          scrollToBottom(true);
+          scrollBtn.style.display = 'none';
         } else {
-          vscode.postMessage({ type: 'stopGeneration' });
+          scrollBtn.style.display = 'block';
         }
-      };
+      },
+      { passive: true }
+    );
 
-      newSessionBtn.onclick = () => {
+    // Mark that the user is about to scroll; we only actually disable once they are away from bottom
+    ['wheel', 'touchstart', 'mousedown'].forEach(function (evt) {
+      chat.addEventListener(
+        evt,
+        function () {
+          userInitiatedScroll = true;
+        },
+        { passive: true }
+      );
+    });
+
+    scrollBtn.onclick = function () {
+      shouldAutoScroll = true;
+      userInitiatedScroll = false;
+      scrollToBottom(true, 'smooth');
+    };
+
+    // Mutation observer keeps us pinned while streaming and on new code blocks
+    new MutationObserver(function (records) {
+      records.forEach(function (rec) {
+        if (isStreaming) {
+          if (shouldAutoScroll) scrollToBottomImmediate(true);
+          return;
+        }
+        rec.addedNodes.forEach(function (node) {
+          if (
+            shouldAutoScroll &&
+            node instanceof HTMLElement &&
+            node.querySelector('pre')
+          ) {
+            scrollToBottom(true, 'smooth');
+          }
+        });
+      });
+    }).observe(chat, { childList: true, subtree: true });
+
+    function renderMd(text) {
+      return md.render(text);
+    }
+
+    // Avoid duplicating "Copy/Insert" links while streaming by marking <pre> once processed
+    function injectLinks(container) {
+      container.querySelectorAll('pre').forEach(function (pre) {
+        if (pre.dataset.linksInjected === '1') return;
+        pre.dataset.linksInjected = '1';
+        const codeText = pre.innerText;
+
+        ['copy', 'insert'].forEach(function (label) {
+          const a = document.createElement('a');
+          a.href = '#';
+          a.className = label + '-link';
+          a.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+          a.dataset.code = codeText;
+          pre.parentNode.insertBefore(a, pre);
+        });
+      });
+    }
+
+    function appendBubble(raw, cls, tokenCount) {
+      const bubble = document.createElement('div');
+      bubble.className = 'message ' + cls;
+      const prefix = cls === 'user-message' ? 'You:' : 'Assistant:';
+      bubble.innerHTML =
+        '<div class="markdown-body">' +
+        '<strong>' +
+        prefix +
+        '</strong><br/>' +
+        renderMd(raw) +
+        (tokenCount != null
+          ? '<div class="token-count">🧮 ' + tokenCount + ' tokens</div>'
+          : '') +
+        '</div>';
+      injectLinks(bubble);
+      chat.appendChild(bubble);
+
+      // Always scroll for newly appended messages (chat trigger)
+      scrollToBottom(true, 'smooth');
+      return bubble;
+    }
+
+    window.addEventListener('message', function (ev) {
+      const { type, message, tokens, sessionTokens, fileContextTokens, totalTokens } =
+        ev.data;
+      switch (type) {
+        case 'startStream':
+          isStreaming = true;
+          assistantRaw = '';
+          assistantElem = appendBubble('…', 'ai-message thinking');
+          sendBtn.textContent = 'Stop';
+          // Reset any accidental user-scroll lock and pin to bottom
+          userInitiatedScroll = false;
+          shouldAutoScroll = true;
+          scrollToBottomImmediate(true);
+          break;
+
+        case 'streamChunk':
+          if (assistantElem && assistantElem.classList.contains('thinking')) {
+            assistantElem.classList.remove('thinking');
+          }
+          assistantRaw += message;
+          // Update content
+          const body = assistantElem.querySelector('.markdown-body');
+          body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(assistantRaw);
+          injectLinks(assistantElem);
+          // Keep pinned during streaming
+          if (shouldAutoScroll) scrollToBottomImmediate(true);
+          break;
+
+        case 'appendAssistant':
+          if (isStreaming) break;
+          if (message && typeof tokens === 'number') {
+            appendBubble(message, 'ai-message', tokens);
+          }
+          break;
+
+        case 'endStream':
+        case 'stoppedStream':
+          isStreaming = false;
+          sendBtn.textContent = 'Send';
+          assistantRaw = '';
+          assistantElem = null;
+          // After stream ends, ensure we're at the bottom
+          scrollToBottomImmediate(true);
+          break;
+
+        case 'appendUser':
+          if (message && typeof tokens === 'number') {
+            appendBubble(message, 'user-message', tokens);
+          }
+          break;
+
+        case 'fileContextTokens': {
+          const span = document.getElementById('contextTokenCount');
+          if (span && typeof tokens === 'number') {
+            span.textContent = '(' + tokens + ' tokens)';
+            span.style.color = tokens > ${maxTokens} ? 'red' : '';
+          }
+          break;
+        }
+
+        case 'finalizeAI':
+          if (assistantElem && typeof tokens === 'number') {
+            const tdiv = document.createElement('div');
+            tdiv.className = 'token-count';
+            tdiv.textContent = '🧮 ' + tokens + ' tokens';
+            assistantElem.querySelector('.markdown-body').appendChild(tdiv);
+            // Pin to bottom when finalizing
+            scrollToBottomImmediate(true);
+          }
+          break;
+
+        case 'sessionTokenUpdate': {
+          document.getElementById('sessionTokenCount').textContent =
+            String(sessionTokens);
+          document.getElementById('fileTokenCount').textContent =
+            String(fileContextTokens);
+          const totalSpan = document.getElementById('totalTokenCount');
+          totalSpan.textContent = String(totalTokens);
+          totalSpan.style.color = totalTokens > ${maxTokens} ? 'orange' : '';
+          break;
+        }
+
+        // Optional hooks in case your extension posts these events:
+        // Ensure we scroll when code is validated or code input is acknowledged by the backend.
+        case 'codeValidated':
+        case 'codeInput':
+          scrollToBottomImmediate(true);
+          break;
+
+        default:
+          console.warn('Unknown message type:', type);
+      }
+    });
+
+    // Chat send/stop
+    sendBtn.onclick = () => {
+      if (sendBtn.textContent === 'Send') {
+        const txt = input.value.trim();
+        if (!txt) return;
+        input.value = '';
+        sendBtn.textContent = 'Stop';
+        // User initiated a new message; reset auto-scroll and pin
         userInitiatedScroll = false;
-        vscode.postMessage({ type: 'newSession' });
-        scrollToBottom(true);
-      };
-
-      settingsBtn.onclick = () => vscode.postMessage({ type: 'openSettings' });
-
-      contextCheckbox.onchange = () =>
+        shouldAutoScroll = true;
         vscode.postMessage({
-          type: 'toggleIncludeFileContext',
-          value: contextCheckbox.checked
+          type: 'sendToAI',
+          message: txt,
+          useFileContext: contextCheckbox.checked
         });
+        // Chat trigger: scroll to bottom
+        scrollToBottom(true, 'smooth');
+      } else {
+        vscode.postMessage({ type: 'stopGeneration' });
+      }
+    };
 
-      input.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          sendBtn.click();
-        }
+    newSessionBtn.onclick = function () {
+      userInitiatedScroll = false;
+      shouldAutoScroll = true;
+      vscode.postMessage({ type: 'newSession' });
+      scrollToBottom(true, 'smooth');
+    };
+
+    settingsBtn.onclick = function () {
+      vscode.postMessage({ type: 'openSettings' });
+    };
+
+    contextCheckbox.onchange = function () {
+      vscode.postMessage({
+        type: 'toggleIncludeFileContext',
+        value: contextCheckbox.checked
       });
+    };
 
-      document.getElementById('editContextLink')?.addEventListener('click', e => {
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        vscode.postMessage({
-          type: 'openSettings',
-          key: 'localAIAssistant.context.contextSize'
-        });
-      });
+        sendBtn.click();
+      }
+    });
 
-      document.body.addEventListener('click', e => {
-        const t = e.target;
-        if (!(t instanceof HTMLAnchorElement)) return;
-        const code = t.dataset.code || '';
-        if (t.classList.contains('copy-link')) {
-          const ta = document.createElement('textarea');
-          ta.value = code;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand('copy');
-          document.body.removeChild(ta);
-          t.textContent = 'Copied!';
-          setTimeout(() => (t.textContent = 'Copy'), 2000);
-        } else if (t.classList.contains('insert-link')) {
-          vscode.postMessage({ type: 'insertCode', message: code });
-        }
+    document.getElementById('editContextLink')?.addEventListener('click', function (e) {
+      e.preventDefault();
+      vscode.postMessage({
+        type: 'openSettings',
+        key: 'localAIAssistant.context.contextSize'
       });
-    })();
-  </script>
+    });
+
+    // Code actions: copy/insert should also keep the conversation pinned to bottom
+    document.body.addEventListener('click', function (e) {
+      const t = e.target;
+      if (!(t instanceof HTMLAnchorElement)) return;
+      const code = t.dataset.code || '';
+      if (t.classList.contains('copy-link')) {
+        const ta = document.createElement('textarea');
+        ta.value = code;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        t.textContent = 'Copied!';
+        setTimeout(function () {
+          t.textContent = 'Copy';
+        }, 2000);
+        // Code validate-related UX (copy) — scroll to bottom
+        scrollToBottom(true, 'smooth');
+      } else if (t.classList.contains('insert-link')) {
+        vscode.postMessage({ type: 'insertCode', message: code });
+        // Code input action (insert) — scroll to bottom
+        scrollToBottom(true, 'smooth');
+      }
+    });
+  })();
+</script>
 </body>
 </html>`;
 }

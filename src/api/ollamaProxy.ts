@@ -161,6 +161,13 @@ export async function streamFromOllama({
 
   let buffer = '';
   while (true) {
+    // 💡 Check abort before reading
+    if (signal?.aborted) {
+      console.log('[OllamaProxy] Aborted by user');
+      try { await reader.cancel(); } catch {}
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const { done, value } = await reader.read();
     if (done) break;
 
@@ -181,6 +188,7 @@ export async function streamFromOllama({
       }
     }
   }
+
 
   if (onDone) onDone();
 }

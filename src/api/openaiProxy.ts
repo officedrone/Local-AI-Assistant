@@ -37,12 +37,12 @@ export async function streamFromOpenAI({
 }): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const endpoint = config.get<string>('endpoint');
-
   if (!endpoint) throw new Error('No endpoint configured');
 
   const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
   const apiKey = config.get<string>('apiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
+    await vscode.extensions.getExtension('officedrone.local-ai-assistant')
+      ?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
 
   const res = await fetch(`${normalizedEndpoint}/chat/completions`, {
     method: 'POST',
@@ -50,11 +50,7 @@ export async function streamFromOpenAI({
       'Content-Type': 'application/json',
       ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true
-    }),
+    body: JSON.stringify({ model, messages, stream: true }),
     signal
   });
 
@@ -62,40 +58,47 @@ export async function streamFromOpenAI({
 
   const reader = res.body?.getReader();
   const decoder = new TextDecoder();
-
   if (!reader) throw new Error('No response body from OpenAI');
 
   let buffer = '';
   while (true) {
+    if (signal?.aborted) {
+      console.log('[openaiProxy] Aborted by user');
+      try { await reader.cancel(); } catch {}
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
 
-    for (const line of lines) {
-      if (!line.trim().startsWith('data:')) continue;
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
 
-      const jsonStr = line.replace(/^data:\s*/, '');
-      if (jsonStr === '[DONE]') {
+      const clean = line.startsWith('data:') ? line.replace(/^data:\s*/, '') : line;
+
+      if (clean === '[DONE]') {
         if (onDone) onDone();
         return;
       }
 
       try {
-        const parsed = JSON.parse(jsonStr);
+        const parsed = JSON.parse(clean);
         const token = parsed?.choices?.[0]?.delta?.content;
         if (token) onToken(token);
       } catch (err) {
-        console.warn('Failed to parse OpenAI stream chunk:', line);
+        console.warn('⚠️ Failed to parse streamed chunk:', clean, err);
       }
     }
   }
 
   if (onDone) onDone();
 }
+
 
 // ✅ Non-streaming fallback
 export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptions): Promise<string> {

@@ -31,17 +31,28 @@ export async function routeChatRequest({
 
   // streaming path
   if (panel) {
-    await handleStreamingResponse({
-      model: trimmedModel,
-      messages,
-      signal,
-      panel,
-      apiType,
-      onToken,
-      onDone,
-    });
+    try {
+      await handleStreamingResponse({
+        model: trimmedModel,
+        messages,
+        signal,
+        panel,
+        apiType,
+        onToken,
+        onDone,
+      });
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        console.log('[apiRouter] stream aborted');
+        // Tell the webview to reset immediately
+        panel.webview.postMessage({ type: 'stoppedStream', message: '' });
+        return;
+      }
+      throw err; // let other errors bubble
+    }
     return;
   }
+
 
   // non-streaming fallback
   try {

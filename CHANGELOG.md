@@ -1,6 +1,16 @@
 # Change Log
 
 
+
+## 0.0.8 – Major routing rewrite, styling update, bugfixes
+
+- ADD: New 'route-to-LLM' logic including a dedicated routing handler, streaming handler, etc.
+- ADD: Stream-related and token counting logic updates to leverage new routing
+- FIX: fix auto-scroll breaking again in certain instances
+- UPDATE: Ollama prompts, model insertion logic, URL logic
+- UPDATE: Styling
+- Other small enhancements
+
 ## 0.0.7 – Retain code indentation, bugfixes
 
 - FIX: retain correct indentation when inserting code blocks
