@@ -1,6 +1,11 @@
 # Change Log
 
 
+## 0.0.9 – File context fixes, introduced contextHandler.ts
+
+- FIX: File context not being included in certain cases
+- ADD: Abstract context handling locic to contextHandler.ts
+- UPDATE: Prompts update
 
 ## 0.0.8 – Major routing rewrite, styling update, bugfixes
 

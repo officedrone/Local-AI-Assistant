@@ -41,7 +41,7 @@ export function buildOpenAIMessages({
   let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code blocks unless the user requests the full file. The language in use is ${language}. If you are a thinking model then iterate at most over 10 iterations.`;
+    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and as concisely as possible. If providing code blocks, provide only relevant code blocks and not the full file unless the user requests the full file. The language in use is ${language}`;
 
     if (fileContext) {
       systemPrompt += `\n\nHere is the current file context:\n${fileContext}`;
@@ -80,7 +80,7 @@ export function buildOllamaMessages({
   let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code blocks unless the user requests the full file. The language in use is ${language}. If you are a thinking model then iterate at most over 10 iterations.`;
+    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and as concisely as possible. If providing code blocks, provide only relevant code blocks and not the full file unless the user requests the full file. The language in use is ${language}`;
 
     if (fileContext) {
       systemPrompt += `\n\nHere is the current file context:\n${fileContext}`;

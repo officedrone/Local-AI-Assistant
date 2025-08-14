@@ -22,7 +22,7 @@ export const validationPrompt = (
 ): string => `
 You are a code validation assistant.
 
-Validate the code snippet below for correctness and clarity. Reason what the code context purpose is and ensure the code snippet makes sense within the file context.
+Validate the code snippet below for correctness and clarity. Reason what the code context purpose is and ensure the code snippet makes sense within the file context. Be as concise as possible in your response.
 
 - If code is valid and makes sense in the context: briefly confirm without repeating the code. Do not include the context or repeat code.
 - If context is insufficient: provide best-practice completions (specific to ${language}).
@@ -53,7 +53,7 @@ export const completionPrompt = (
 ): string => `
 You are a code generation assistant.
 
-Complete the code snippet meaningfully using the context. Only include what’s missing or modified. Reason what the code context purpose is and ensure the code snippet makes sense within the file context. If the code snippet is a comment only, then build the code that the comment suggests.
+Complete the code snippet meaningfully using the context. Only include what’s missing or modified. Reason what the code context purpose is and ensure the code snippet makes sense within the file context. If the code snippet is a comment only, then build the code that the comment suggests. Be as concise as possible in your response.
 
 - If complete and makes sense in the context: say **"The snippet appears complete and optimal as-is given the current context."** without repeating code.
 - If context is weak: offer best-practice examples for ${language}.
