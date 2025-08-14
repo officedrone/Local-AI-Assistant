@@ -60,7 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
             );
           }
           vscode.window.showInformationMessage(
-            `API switched from "${lastApiType}" to "${newApiType}". Cleared stored model field. Use CTRL+SHIFT+ALT+M (CMD+SHIFT+ALT+M on MAC) to select a new model once you have populated the new URL and API type`
+            `API switched "${lastApiType}"->"${newApiType}". Clearing stored model field. Use CTRL+SHIFT+ALT+M (CMD+SHIFT+ALT+M on MAC) to select a new model once you have populated the new URL and API type`
           );
         }
         lastApiType = newApiType;
