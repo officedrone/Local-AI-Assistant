@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import {
   buildOpenAIMessages,
   buildOllamaMessages,
-  PromptContext
+  PromptContext,
+  getLanguage  
 } from './promptBuilder';
 import { getWebviewContent } from '../static/chatPanelView';
 import {
@@ -18,6 +19,12 @@ import {
 } from './tokenActions';
 import { routeChatRequest } from '../api/apiRouter';
 
+import {
+  markContextDirty,
+  shouldIncludeContext,
+  getFileContext
+} from '../handlers/contextHandler';
+
 const CONFIG_SECTION = 'localAIAssistant';
 
 let chatPanel: vscode.WebviewPanel | undefined;
@@ -31,6 +38,11 @@ let conversation: { role: 'system' | 'user' | 'assistant'; content: string }[] =
 
 // Code editor definition for context purposes (works even when webview has focus)
 function getCodeEditor(): vscode.TextEditor | undefined {
+  const active = vscode.window.activeTextEditor;
+  if (active && active.document.uri.scheme !== 'vscode-webview')
+    {
+      return active;
+    } 
   return vscode.window.visibleTextEditors.find(
     (ed) => ed.document.uri.scheme !== 'vscode-webview'
   );
@@ -44,11 +56,10 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
   extensionContext = context;
 
   // When a text document changes, recalc & push tokens
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeTextDocument(() => {
-      if (chatPanel) postFileContextTokens(chatPanel);
-    })
-  );
+  vscode.workspace.onDidChangeTextDocument((e) => {
+    markContextDirty(e.document);
+    if (chatPanel) postFileContextTokens(chatPanel);
+  });
 
   // When the user switches editors, recalc & push tokens
   context.subscriptions.push(
@@ -147,41 +158,71 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         const userMessage = evt.message?.trim();
         if (!userMessage) return;
 
-        const includeCtx = config.get<boolean>('includeFileContext', true);
+        // Read config
+        const includeCtx = config.get<boolean>('context.includeFileContext', true);
         const apiType = config.get<string>('apiType', 'openai');
         const model = config.get<string>('model') || '';
 
-        let fileContext: string | undefined;
-        if (includeCtx) {
-          const ed = getCodeEditor();
-          if (ed) fileContext = ed.document.getText();
+        // Always read from a real editor even if the webview is focused
+        const ed = getCodeEditor();
+        const text = ed?.document.getText() ?? '';
+
+        // Decide whether to include file context THIS TURN
+        const includeFileThisTurn =
+          includeCtx && shouldIncludeContext(text, conversation.length === 0);
+
+        const fileContext = includeFileThisTurn ? text : undefined;
+
+        // Detect language for better system prompt
+        let language: string | undefined;
+        try {
+          language = await getLanguage();
+        } catch {
+          // No active editor; leave undefined -> builder defaults to plaintext
         }
 
-
-        // Mark streaming active before any token adds
+        // Mark streaming active before token accounting
         setStreamingActive(panel, true);
 
-        //Count user tokens
-        const userTokens = countTextTokens(userMessage);
-        addToSessionTokenCount(userTokens);
+        // Build the system prompt for this turn (may or may not include fileContext)
+        const promptContext: PromptContext = {
+          code: userMessage,
+          mode: 'chat',
+          fileContext,
+          language
+        };
 
-        // build chat messages and append to conversation history (system prompt only in first message)
+        const built =
+          apiType === 'ollama'
+            ? buildOllamaMessages(promptContext)
+            : buildOpenAIMessages(promptContext);
+
+        const newSystem = built[0]; // { role: 'system', content: ... }
+
+        // Token count before mutating the conversation
+        const beforeTokens = countMessageTokens(conversation);
+
+        // Ensure a single, sticky system prompt:
+        // - On first turn: insert it.
+        // - On later turns: only replace if we're refreshing context (includeFileThisTurn).
         if (conversation.length === 0) {
-          const promptContext: PromptContext = {
-            code: userMessage,
-            mode: 'chat',
-            fileContext
-          };
-          const msgs =
-            apiType === 'ollama'
-              ? buildOllamaMessages(promptContext)
-              : buildOpenAIMessages(promptContext);
-          conversation.push(...msgs);
-        } else {
-          conversation.push({ role: 'user', content: userMessage });
+          conversation.push(newSystem);
+        } else if (conversation[0]?.role !== 'system') {
+          conversation.unshift(newSystem);
+        } else if (includeFileThisTurn) {
+          conversation[0] = newSystem;
         }
+        // Else: keep the existing system prompt so prior file context persists.
 
-        // check total token budget
+        // Append current user turn
+        conversation.push({ role: 'user', content: userMessage });
+
+        // Token deltas for this user turn
+        const afterTokens = countMessageTokens(conversation);
+        const userTurnTokens = Math.max(0, afterTokens - beforeTokens);
+        addToSessionTokenCount(userTurnTokens);
+
+        // Budget warning
         const total = countMessageTokens(conversation);
         const maxTokens = config.get<number>('maxTokens', 4096);
         if (total > maxTokens) {
@@ -190,11 +231,11 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
           );
         }
 
-        // render the user bubble
+        // Render user bubble
         panel.webview.postMessage({
           type: 'appendUser',
           message: userMessage,
-          tokens: userTokens
+          tokens: userTurnTokens
         });
         postSessionTokenUpdate(
           panel,
@@ -216,27 +257,24 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
             signal: controller.signal,
             panel,
             onToken: (chunk: string) => {
-              // Central guard lives in tokenActions.addToSessionTokenCount as well,
-              // but this early check avoids extra work here too.
               if (!isStreamingActive(panel)) return;
 
-              // accumulate
               assistantText += chunk;
 
-              // count this chunk
               const chunkTokens = countTextTokens(chunk);
-
-              // update session total
               addToSessionTokenCount(chunkTokens);
               postSessionTokenUpdate(
                 panel,
                 getSessionTokenCount(),
                 getEffectiveFileContextTokens()
               );
+            },
+            onDone: () => {
+              // Optional: verify context presence
+              // console.log('SYS>>', conversation[0]?.content.slice(0, 200));
             }
           });
 
-          // Stream completed normally
           setStreamingActive(panel, false);
         } catch (err: any) {
           setStreamingActive(panel, false);
@@ -245,6 +283,9 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
         break;
       }
+
+
+
 
       case 'stopGeneration': {
         setStreamingActive(panel, false);

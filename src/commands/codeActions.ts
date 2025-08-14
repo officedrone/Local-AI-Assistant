@@ -41,7 +41,7 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       }
 
       const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      const includeCtx = config.get<boolean>('includeFileContext', true);
+      const includeCtx = config.get<boolean>('context.includeFileContext', true);
       const apiType = config.get<string>('apiType', 'openai');
       const model = config.get<string>('model')!;
       const fileContext = includeCtx ? editor.document.getText() : undefined;
@@ -134,7 +134,8 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
       }
 
       const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      const includeCtx = config.get<boolean>('includeFileContext', true);
+      const includeCtx = config.get<boolean>('context.includeFileContext', true);
+
       const apiType = config.get<string>('apiType', 'openai');
       const model = config.get<string>('model')!;
       const fileContext = includeCtx ? editor.document.getText() : undefined;

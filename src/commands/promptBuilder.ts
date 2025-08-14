@@ -38,10 +38,10 @@ export function buildOpenAIMessages({
   fileContext,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
-  let systemPrompt: string;
+  let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code blocks unless the user requests the full file. The language in use is ${language}.`;
+    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code blocks unless the user requests the full file. The language in use is ${language}. If you are a thinking model then iterate at most over 10 iterations.`;
 
     if (fileContext) {
       systemPrompt += `\n\nHere is the current file context:\n${fileContext}`;
@@ -63,23 +63,28 @@ export function buildOpenAIMessages({
 
   return [
     { role: 'system', content: systemPrompt.trim() },
-    { role: 'user',   content: userPrompt }
+    { role: 'user', content: userPrompt }
   ];
 }
 
 /**
  * Build messages for Ollama's chat endpoint.
- * Simpler prompt, avoids verbose instructions and file context.
+ * Modified to include file context if provided.
  */
 export function buildOllamaMessages({
   code,
   mode,
+  fileContext,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
-  let systemPrompt: string;
+  let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = `You are a coding assistant. Answer concisely. Language: ${language}.`;
+    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and concisely. Provide only relevant code blocks unless the user requests the full file. The language in use is ${language}. If you are a thinking model then iterate at most over 10 iterations.`;
+
+    if (fileContext) {
+      systemPrompt += `\n\nHere is the current file context:\n${fileContext}`;
+    }
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(code, undefined, language);
   } else {
@@ -97,6 +102,6 @@ export function buildOllamaMessages({
 
   return [
     { role: 'system', content: systemPrompt.trim() },
-    { role: 'user',   content: userPrompt }
+    { role: 'user', content: userPrompt }
   ];
 }
