@@ -1,3 +1,4 @@
+//src/api/ollamaProxy.ts
 import * as vscode from 'vscode';
 
 const CONFIG_SECTION = 'localAIAssistant';
@@ -26,14 +27,21 @@ function normalizeOllamaEndpoint(endpoint: string): string {
   return endpoint.includes('/api') ? endpoint : `${endpoint.replace(/\/$/, '')}/api`;
 }
 
+// 🔑 Helper to retrieve secure API key
+async function getApiKey(): Promise<string | undefined> {
+  return await vscode.extensions
+    .getExtension('officedrone.local-ai-assistant')
+    ?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
+}
+
 // 🧠 Non-streaming fallback
 export async function sendToOllama({ model, messages, signal }: ChatRequestOptions): Promise<string> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const baseEndpoint = config.get<string>('ollamaEndpoint') ?? 'http://localhost:11434';
+
+  const baseEndpoint = config.get<string>('apiLLM.apiURL.endpoint') ?? 'http://localhost:11434';
   const normalizedEndpoint = normalizeOllamaEndpoint(baseEndpoint);
 
-  const apiKey = config.get<string>('ollamaApiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.ollamaApiKey');
+  const apiKey = await getApiKey();
 
   let finalModel = model?.trim() || config.get<string>('apiLLM.config.model')?.trim();
 
@@ -104,11 +112,10 @@ export async function streamFromOllama({
   onDone?: () => void;
 }): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const baseEndpoint = config.get<string>('ollamaEndpoint') ?? 'http://localhost:11434';
+  const baseEndpoint = config.get<string>('apiLLM.apiURL.endpoint') ?? 'http://localhost:11434';
   const normalizedEndpoint = normalizeOllamaEndpoint(baseEndpoint);
 
-  const apiKey = config.get<string>('ollamaApiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.ollamaApiKey');
+  const apiKey = await getApiKey();
 
   let finalModel = model?.trim() || config.get<string>('apiLLM.config.model')?.trim();
 
@@ -161,7 +168,6 @@ export async function streamFromOllama({
 
   let buffer = '';
   while (true) {
-    // 💡 Check abort before reading
     if (signal?.aborted) {
       console.log('[OllamaProxy] Aborted by user');
       try { await reader.cancel(); } catch {}
@@ -183,12 +189,11 @@ export async function streamFromOllama({
         const token = parsed?.message?.content;
         if (token) onToken(token);
         if (parsed?.done && onDone) onDone();
-      } catch (err) {
+      } catch {
         console.warn('⚠️ Failed to parse streamed chunk:', line);
       }
     }
   }
-
 
   if (onDone) onDone();
 }
@@ -196,11 +201,10 @@ export async function streamFromOllama({
 // ✅ Fetch available Ollama models
 export async function fetchOllamaTags(): Promise<string[]> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const baseEndpoint = config.get<string>('ollamaEndpoint') ?? 'http://localhost:11434';
+  const baseEndpoint = config.get<string>('apiLLM.apiURL.endpoint') ?? 'http://localhost:11434';
   const normalizedEndpoint = normalizeOllamaEndpoint(baseEndpoint);
 
-  const apiKey = config.get<string>('ollamaApiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.ApiKey');
+  const apiKey = await getApiKey();
 
   try {
     const res = await fetch(`${normalizedEndpoint}/tags`, {

@@ -11,7 +11,6 @@ export interface ChatRequestOptions {
   signal?: AbortSignal;
   panel?: vscode.WebviewPanel;
 
-  // callbacks for streaming chunks & completion
   onToken?: (chunk: string) => void;
   onDone?: () => void;
 }
@@ -44,22 +43,19 @@ export async function routeChatRequest({
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         console.log('[apiRouter] stream aborted');
-        // Tell the webview to reset immediately
         panel.webview.postMessage({ type: 'stoppedStream', message: '' });
         return;
       }
-      throw err; // let other errors bubble
+      throw err;
     }
     return;
   }
-
 
   // non-streaming fallback
   try {
     let response: string;
 
     if (apiType === 'ollama') {
-      // Ollama doesn’t accept "assistant" roles in the prompt
       const ollamaMessages = messages.filter(
         (m): m is { role: 'system' | 'user'; content: string } =>
           m.role !== 'assistant'
@@ -129,10 +125,14 @@ async function showHealthMessage(apiType: string) {
     message =
       '🔌 LLM service may be offline or misconfigured. Check your endpoint and authentication.';
   } else if (!hasModels) {
-    message =
-      apiType === 'ollama'
-        ? '🚦 Ollama reachable but returned no tags. Ensure your models are loaded.'
-        : '🚦 OpenAI-compatible service reachable but no models loaded. Use CTRL+SHIFT+ALT+M to select one.';
+    if (apiType === 'ollama') {
+      message =
+        '🚦 Ollama is reachable but returned no tags. Ensure your models are loaded with `ollama pull <model>`.';
+    } else {
+      message =
+        '🚦 OpenAI‑compatible service is reachable but returned no models from /v1/models. ' +
+        'Verify that the service has models deployed models. Press CTRL+ALT+SHIFT+M (CMD+ALT+SHIFT+M for Mac) to select a model and load it if your environment supports JIT.';
+    }
   } else {
     message = '✅ Service is healthy but request failed. See console for details.';
   }

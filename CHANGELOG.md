@@ -1,6 +1,12 @@
 # Change Log
 
 
+## 0.0.10 – OpenAI/Ollama proxy fixes
+
+- FIX: Ollama/OpenAI-compatible endpoints not respecting config URL setting
+- FIX: OpenAI-compatible endpoint model selector logic
+
+
 ## 0.0.9 – File context fixes, introduced contextHandler.ts
 
 - FIX: File context not being included in certain cases

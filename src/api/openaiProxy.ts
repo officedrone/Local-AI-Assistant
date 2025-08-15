@@ -1,9 +1,10 @@
+// src/api/openaiProxy.ts
 import * as vscode from 'vscode';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
 export interface ChatRequestOptions {
-  model: string;
+  model?: string;
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   signal?: AbortSignal;
 }
@@ -21,6 +22,78 @@ function normalizeOpenAIEndpoint(endpoint: string): string {
   return endpoint.includes('/v1') ? endpoint : `${endpoint.replace(/\/$/, '')}/v1`;
 }
 
+// Secure API key retrieval
+async function getApiKey(): Promise<string | undefined> {
+  return await vscode.extensions
+    .getExtension('officedrone.local-ai-assistant')
+    ?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
+}
+
+// ✅ Fetch available OpenAI models
+export async function fetchOpenAiModels(): Promise<string[]> {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const endpoint = config.get<string>('apiLLM.apiURL.endpoint');
+
+  if (!endpoint) {
+    vscode.window.showErrorMessage('❌ No endpoint configured.');
+    return [];
+  }
+
+  const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
+  const apiKey = await getApiKey();
+
+  try {
+    const res = await fetch(`${normalizedEndpoint}/models`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json() as { data?: { id: string }[] };
+    return data.data?.map((m) => m.id).filter(Boolean) ?? [];
+  } catch (err) {
+    vscode.window.showErrorMessage(`🛑 Failed to fetch OpenAI model list: ${err}`);
+    console.error('OpenAI model list error:', err);
+    return [];
+  }
+}
+
+// ✅ Helper to ensure model is set or prompt user
+async function ensureOpenAIModel(model?: string): Promise<string | undefined> {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  let finalModel = model?.trim() || config.get<string>('apiLLM.config.model')?.trim();
+
+  if (!finalModel) {
+    const models = await fetchOpenAiModels();
+    if (models.length === 0) {
+      vscode.window.showErrorMessage(
+        '🚫 No OpenAI-compatible models available. Load or configure models first by pressing CTRL+SHIFT+ALT+M (CMD+SHIFT+ALT+M on Mac).'
+      );
+      throw new Error('No models available');
+    }
+
+    const selected = await vscode.window.showQuickPick(models, {
+      placeHolder: 'Select an OpenAI model to use',
+    });
+
+    if (!selected) {
+      console.warn('[OpenAIProxy] aborted: user did not select a model');
+      throw new Error('No model selected');
+    }
+
+    await config.update('apiLLM.config.model', selected, vscode.ConfigurationTarget.Global);
+    finalModel = selected;
+  }
+
+  return finalModel;
+}
+
 // ✅ Streaming support
 export async function streamFromOpenAI({
   model,
@@ -29,20 +102,21 @@ export async function streamFromOpenAI({
   onToken,
   onDone,
 }: {
-  model: string;
+  model?: string;
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   signal?: AbortSignal;
   onToken: (token: string) => void;
   onDone?: () => void;
 }): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const endpoint = config.get<string>('endpoint');
+  const endpoint = config.get<string>('apiLLM.apiURL.endpoint');
   if (!endpoint) throw new Error('No endpoint configured');
 
+  const finalModel = await ensureOpenAIModel(model);
+  if (!finalModel) return;
+
   const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
-  const apiKey = config.get<string>('apiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')
-      ?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
+  const apiKey = await getApiKey();
 
   const res = await fetch(`${normalizedEndpoint}/chat/completions`, {
     method: 'POST',
@@ -50,7 +124,7 @@ export async function streamFromOpenAI({
       'Content-Type': 'application/json',
       ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
     },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify({ model: finalModel, messages, stream: true }),
     signal
   });
 
@@ -58,7 +132,7 @@ export async function streamFromOpenAI({
 
   const reader = res.body?.getReader();
   const decoder = new TextDecoder();
-  if (!reader) throw new Error('No response body from OpenAI');
+  if (!reader) throw new Error('No response body from OpenAI-compatible endpoint');
 
   let buffer = '';
   while (true) {
@@ -80,7 +154,6 @@ export async function streamFromOpenAI({
       if (!line) continue;
 
       const clean = line.startsWith('data:') ? line.replace(/^data:\s*/, '') : line;
-
       if (clean === '[DONE]') {
         if (onDone) onDone();
         return;
@@ -99,20 +172,27 @@ export async function streamFromOpenAI({
   if (onDone) onDone();
 }
 
-
 // ✅ Non-streaming fallback
 export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptions): Promise<string> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const endpoint = config.get<string>('endpoint');
+  const endpoint = config.get<string>('apiLLM.apiURL.endpoint');
 
   if (!endpoint) {
     vscode.window.showErrorMessage('❌ No endpoint configured in localAIAssistant settings.');
     return 'Error: No endpoint';
   }
 
+  let finalModel: string;
+  try {
+    const ensured = await ensureOpenAIModel(model);
+    if (!ensured) return 'Error: No model selected';
+    finalModel = ensured;
+  } catch (err: any) {
+    return `Error: ${err.message || err}`;
+  }
+
   const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
-  const apiKey = config.get<string>('apiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
+  const apiKey = await getApiKey();
 
   try {
     const res = await fetch(`${normalizedEndpoint}/chat/completions`, {
@@ -121,7 +201,7 @@ export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptio
         'Content-Type': 'application/json',
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
       },
-      body: JSON.stringify({ model, messages }),
+      body: JSON.stringify({ model: finalModel, messages }),
       signal
     });
 
@@ -131,9 +211,7 @@ export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptio
         'Yes',
         'Later'
       );
-      if (response === 'Yes') {
-        vscode.commands.executeCommand('extension.setApiKey');
-      }
+      if (response === 'Yes') vscode.commands.executeCommand('extension.setApiKey');
       return 'Error: Unauthorized';
     }
 
@@ -143,42 +221,5 @@ export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptio
     vscode.window.showErrorMessage(`🛑 Request failed: ${err}`);
     console.error('OpenAI proxy error:', err);
     return `Error: ${err}`;
-  }
-}
-
-// ✅ Fetch available models
-export async function fetchOpenAiModels(): Promise<string[]> {
-  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const endpoint = config.get<string>('endpoint');
-  const apiKey = config.get<string>('apiKey') ??
-    await vscode.extensions.getExtension('officedrone.local-ai-assistant')?.exports?.getSecret?.('localAIAssistant.apiLLM.config.apiKey');
-
-  if (!endpoint) {
-    vscode.window.showErrorMessage('❌ No endpoint configured.');
-    return [];
-  }
-
-  const normalizedEndpoint = normalizeOpenAIEndpoint(endpoint);
-
-  try {
-    const res = await fetch(`${normalizedEndpoint}/models`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
-      }
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const data = await res.json() as { data?: { id: string }[] };
-    return data.data?.map((model) => model.id) ?? [];
-
-  } catch (err) {
-    vscode.window.showErrorMessage(`🛑 Failed to fetch model list: ${err}`);
-    console.error('Model list error:', err);
-    return [];
   }
 }
