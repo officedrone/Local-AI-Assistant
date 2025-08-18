@@ -247,6 +247,8 @@ button:active {
 #scrollToBottomButton:hover {
   background: var(--btn-hover-bg);
   transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
 }
 
 /* ─── INPUT AREA ────────────────────────────── */
@@ -345,8 +347,8 @@ button:active {
 
 .session-buttons {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
-  align-items: center;
 }
 
 .token-count {
@@ -358,37 +360,94 @@ button:active {
 }
 
 /* ─── SESSION TOKENS PANEL (Scoreboard look) ───────────────────── */
+
+
 #sessionTokenContainer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  align-items: center;       
+  justify-content: center;    
   gap: 8px;
+  flex-wrap: nowrap;           
+  overflow-x: auto;            
+  white-space: nowrap;         
   padding: 8px 14px;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-editorWidget-border);
   border-radius: 8px;
-  font-family: "Consolas", "Courier New", monospace; /* scoreboard-like */
+  font-family: "Consolas", "Courier New", monospace;
   font-weight: 600;
   letter-spacing: 0.5px;
   box-shadow: inset 0 -1px 0 rgba(255,255,255,0.05);
 }
 
-/* Token counts styled like stats cells */
-#contextTokenCount,
+
+
+#sessionTokenCount,
+#fileTokenCount,
 #totalTokenCount {
   padding: 4px 8px;
   border-radius: 4px;
   background-color: rgba(255,255,255,0.05);
-  font-variant-numeric: tabular-nums; /* aligns digits neatly */
-  min-width: 40px;
-  text-align: right;
+  border: 1px solid var(--vscode-editorWidget-border);
+  font-size: 0.85em;
+  color: var(--vscode-input-foreground);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.2s ease, color 0.2s ease,
+              transform 0.1s ease, box-shadow 0.2s ease;
 }
 
-/* Optional hover cue for interactivity */
-#contextTokenCount:hover,
+#sessionTokenCount:hover,
+#fileTokenCount:hover,
 #totalTokenCount:hover {
   background-color: var(--btn-hover-bg);
   color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
+}
+
+
+/* Keep settings+stack as one block */
+.settings-with-stack {
+  display: flex;
+  flex-direction: column; /* Stack vertically */
+  align-items: center; /* Center under settings button */
+  gap: 4px;
+}
+
+.llm-info-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+#llmURLBox,
+#modelNameBox {
+  flex: 1; /* equal halves */
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: rgba(255,255,255,0.05);
+  border: 1px solid var(--vscode-editorWidget-border);
+  font-size: 0.85em;
+  color: var(--vscode-input-foreground);
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
+
+#llmURLBox:hover,
+#modelNameBox:hover {
+  background-color: var(--btn-hover-bg);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
+  transition: background-color 0.2s ease, color 0.2s ease,
+              transform 0.1s ease, box-shadow 0.2s ease;
+
+}
+

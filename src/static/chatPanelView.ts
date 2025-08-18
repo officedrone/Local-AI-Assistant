@@ -15,6 +15,26 @@ export function getWebviewContent(
     .getConfiguration(CONFIG_SECTION)
     .get<number>('maxTokens', 4096);
 
+  const modelName = vscode.workspace
+  .getConfiguration('localAIAssistant')
+    .get<string>('apiLLM.config.model', '')
+  ?.trim() || 'None';
+
+  panel.webview.postMessage({
+    type: 'setModel',
+    value: modelName,
+  });
+
+   const displayUrl = vscode.workspace
+  .getConfiguration('localAIAssistant')
+    .get<string>('apiLLM.apiURL.endpoint', '')
+  ?.trim() || 'None';
+
+  panel.webview.postMessage({
+    type: 'setLLMUrl',
+    value: displayUrl,
+  });
+
   // build URIs to our static resources
   const styleUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(context.extensionUri, 'media', 'styles.css')
@@ -34,17 +54,22 @@ export function getWebviewContent(
 <body>
   <div id="session-controls">
     <div class="session-buttons">
-      <button id="newSessionButton">📄New Session</button>
+      <button id="newSessionButton">📄 New Session</button>
       <button id="settingsButton" title="Settings">⚙️</button>
     </div>
 
+    <div class="llm-info-row">
+      <span id="llmURLBox" title="Click to set LLM URL">LLM Endpoint</span>
+      <span id="modelNameBox" title="Click to change model">Model Name</span>
+    </div>
+
     <div id="sessionTokenContainer">
-     🧮 Session Token Usage | Chat: <span id="sessionTokenCount">0</span> |
+      Token Usage | Chat: <span id="sessionTokenCount">0</span> |
       File: <span id="fileTokenCount">0</span> |
       Total: <span id="totalTokenCount">0</span>
       <span id="maxTokenLabel">
-        (Context: ${maxTokens}
-        <a href="#" id="editContextLink" title="Edit context size">⚙️</a>)
+        / ${maxTokens}
+        <a href="#" id="editContextLink" title="Edit context size">⚙️</a>
       </span>
     </div>
   </div>
@@ -287,6 +312,27 @@ export function getWebviewContent(
           }
           break;
 
+        case 'setModel':
+          const modelSpan = document.getElementById('modelNameBox');
+          if (modelSpan) {
+            const displayName = ev.data.value && ev.data.value.trim()
+              ? ev.data.value
+              : 'None';
+            modelSpan.textContent = \`Model: \${displayName}\`;
+          }
+          break;
+
+        case 'setLLMUrl':
+          const urlSpan = document.getElementById('llmURLBox');
+          if (urlSpan) {
+            const displayUrl = ev.data.value && ev.data.value.trim()
+              ? ev.data.value
+              : 'None';
+            urlSpan.textContent = \`LLM URL: \${displayUrl}\`;
+          }
+          break;
+
+
         case 'sessionTokenUpdate': {
           document.getElementById('sessionTokenCount').textContent =
             String(sessionTokens);
@@ -331,6 +377,20 @@ export function getWebviewContent(
         vscode.postMessage({ type: 'stopGeneration' });
       }
     };
+
+
+    document.getElementById('modelNameBox').addEventListener('click', () => {
+      vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectModel' });
+    });
+
+    document.getElementById('llmURLBox')?.addEventListener('click', () => {
+      vscode.postMessage({
+        type: 'invokeCommand',
+        command: 'extension.setApiURL'
+      });
+    });
+
+
 
     newSessionBtn.onclick = function () {
       userInitiatedScroll = false;
@@ -382,11 +442,9 @@ export function getWebviewContent(
           t.textContent = 'Copy';
         }, 2000);
         // Code validate-related UX (copy) — scroll to bottom
-        scrollToBottom(true, 'smooth');
       } else if (t.classList.contains('insert-link')) {
         vscode.postMessage({ type: 'insertCode', message: code });
         // Code input action (insert) — scroll to bottom
-        scrollToBottom(true, 'smooth');
       }
     });
   })();

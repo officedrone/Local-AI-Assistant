@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.0.11 – OpenAI/Ollama proxy fixes
+
+- ADD: URL and Model selection commands, UI elements, styling, initial error handling
+- FIX: Removed unintended scroll to button on pressing copy or insert buttons within chat
+- UPDATE: Styling, code readability enhancements,
 
 ## 0.0.10 – OpenAI/Ollama proxy fixes
 

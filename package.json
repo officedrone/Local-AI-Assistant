@@ -4,7 +4,7 @@
   "description": "A VS Code extension that interacts with a LLM API endpoint on your network",
   "publisher": "officedrone",
   "icon": "media/icon.png",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "repository": {
     "type": "git",
     "url": "https://github.com/officedrone/local-ai-assistant"
@@ -58,7 +58,13 @@
         "command": "extension.selectModel",
         "title": "Select Model",
         "category": "Local AI Assistant"
+      },
+      {
+        "command": "extension.setApiURL",
+        "title": "Set LLM API endpoint URL",
+        "category": "Local AI Assistant"
       }
+
     ],
     "keybindings": [
       {
@@ -85,7 +91,13 @@
         "command": "extension.setApiKey",
         "key": "ctrl+shift+alt+k",
         "mac": "cmd+shift+alt+k"
+      },
+      {
+        "command": "extension.setApiURL",
+        "key": "ctrl+shift+alt+u",
+        "mac": "cmd+shift+alt+u"
       }
+
     ],
     "submenus": [
       {

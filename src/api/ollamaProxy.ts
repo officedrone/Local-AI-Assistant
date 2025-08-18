@@ -122,7 +122,7 @@ export async function streamFromOllama({
   if (!finalModel) {
     const tags = await fetchOllamaTags();
     if (tags.length === 0) {
-      vscode.window.showErrorMessage('🚫 No Ollama models available. Load models first by pressing CTRL+SHIFT+ALT+M (CMD+SHIFT+ALT+M on Mac).');
+      vscode.window.showErrorMessage('No Ollama models available. Download a model if you have not done so.');
       throw new Error('No models available');
     }
 
@@ -141,7 +141,7 @@ export async function streamFromOllama({
 
   const filteredMessages = filterOllamaMessages(messages);
 
-  console.log('📤 Ollama request payload:', JSON.stringify({ model: finalModel, messages: filteredMessages, stream: true }, null, 2));
+  console.log('Ollama request payload:', JSON.stringify({ model: finalModel, messages: filteredMessages, stream: true }, null, 2));
 
   const res = await fetch(`${normalizedEndpoint}/chat`, {
     method: 'POST',
@@ -163,7 +163,7 @@ export async function streamFromOllama({
   const decoder = new TextDecoder();
 
   if (!reader) {
-    throw new Error('No response body from Ollama');
+    throw new Error('No response body from Ollama. Service might not be working, or a model might not be loaded');
   }
 
   let buffer = '';

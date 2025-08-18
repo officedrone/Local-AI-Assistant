@@ -7,13 +7,10 @@ import { fetchAvailableModels } from './api/apiRouter';
 const CONFIG_SECTION = 'localAIAssistant';
 
 export function activate(context: vscode.ExtensionContext) {
-  
-  
   // Read the initial apiType
   let lastApiType = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
     .get<string>('apiLLM.config.apiType', '');
-
 
   // 1) Initialize core features
   setupIdleTooltip(context);
@@ -21,8 +18,8 @@ export function activate(context: vscode.ExtensionContext) {
   registerCodeActions(context);
   registerSelectModelCommand(context);
   registerSetApiKeyCommand(context);
+  registerSetApiUrlCommand(context);
   createStatusBarItem(context);
-
 
   // 2) Watch for apiType changes and clear model wherever it was set
   const onConfigChange = vscode.workspace.onDidChangeConfiguration(async (event) => {
@@ -75,9 +72,42 @@ export function deactivate() {
   // no-op
 }
 
+// “Set API URL” command
+function registerSetApiUrlCommand(context: vscode.ExtensionContext) {
+  const setApiUrlCmd = vscode.commands.registerCommand(
+    'extension.setApiURL',
+    async () => {
+      const configKey = 'localAIAssistant.apiLLM.apiURL.endpoint';
+
+      const current = vscode.workspace.getConfiguration().get<string>(configKey) ?? '';
+      const value = await vscode.window.showInputBox({
+        prompt: 'Enter the LLM endpoint URL',
+        placeHolder: 'e.g. http://localhost:1234/v1 or http://localhost:11434/api',
+        value: current,
+        validateInput: (input) => {
+          try {
+            new URL(input);
+            return null;
+          } catch {
+            return 'Please enter a valid URL (must include protocol)';
+          }
+        }
+      });
+
+      if (value && value.trim()) {
+        await vscode.workspace.getConfiguration().update(
+          configKey,
+          value.trim(),
+          vscode.ConfigurationTarget.Global
+        );
+        vscode.window.showInformationMessage(`✅ API URL set to: ${value.trim()}`);
+      }
+    }
+  );
+  context.subscriptions.push(setApiUrlCmd);
+}
 
 // Status bar helper
-
 function createStatusBarItem(context: vscode.ExtensionContext) {
   const item = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -91,7 +121,6 @@ function createStatusBarItem(context: vscode.ExtensionContext) {
 }
 
 // “Select Model” command
-
 function registerSelectModelCommand(context: vscode.ExtensionContext) {
   const cmd = vscode.commands.registerCommand(
     'extension.selectModel',
@@ -124,7 +153,6 @@ function registerSelectModelCommand(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(cmd);
 }
-
 
 // “Set API Key” command
 function registerSetApiKeyCommand(context: vscode.ExtensionContext) {

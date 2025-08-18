@@ -216,9 +216,9 @@ export async function sendToOpenAI({ model, messages, signal }: ChatRequestOptio
     }
 
     const json = await res.json() as ChatResponse;
-    return json.choices?.[0]?.message?.content ?? 'No response';
+    return json.choices?.[0]?.message?.content ?? '<No response received: Service or Model might not be set up correctly>';
   } catch (err) {
-    vscode.window.showErrorMessage(`🛑 Request failed: ${err}`);
+    vscode.window.showErrorMessage(`Request failed: ${err}`);
     console.error('OpenAI proxy error:', err);
     return `Error: ${err}`;
   }

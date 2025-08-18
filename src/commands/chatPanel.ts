@@ -3,7 +3,7 @@ import {
   buildOpenAIMessages,
   buildOllamaMessages,
   PromptContext,
-  getLanguage  
+  getLanguage
 } from './promptBuilder';
 import { getWebviewContent } from '../static/chatPanelView';
 import {
@@ -18,7 +18,6 @@ import {
   isStreamingActive
 } from './tokenActions';
 import { routeChatRequest } from '../api/apiRouter';
-
 import {
   markContextDirty,
   shouldIncludeContext,
@@ -29,20 +28,19 @@ const CONFIG_SECTION = 'localAIAssistant';
 
 let chatPanel: vscode.WebviewPanel | undefined;
 const abortControllers = new WeakMap<vscode.WebviewPanel, AbortController>();
-
 let extensionContext: vscode.ExtensionContext;
 let lastFileContextTokens = 0;
 
 // tracks the history of messages
-let conversation: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
+let conversation: { role: 'system' | 'user' | 'assistant'; content: string }[] =
+  [];
 
 // Code editor definition for context purposes (works even when webview has focus)
 function getCodeEditor(): vscode.TextEditor | undefined {
   const active = vscode.window.activeTextEditor;
-  if (active && active.document.uri.scheme !== 'vscode-webview')
-    {
-      return active;
-    } 
+  if (active && active.document.uri.scheme !== 'vscode-webview') {
+    return active;
+  }
   return vscode.window.visibleTextEditors.find(
     (ed) => ed.document.uri.scheme !== 'vscode-webview'
   );
@@ -54,6 +52,35 @@ export function getActiveChatPanel(): vscode.WebviewPanel | undefined {
 
 export function registerChatPanelCommand(context: vscode.ExtensionContext) {
   extensionContext = context;
+
+  vscode.workspace.onDidChangeConfiguration((e) => {
+    if (chatPanel && e.affectsConfiguration('localAIAssistant.apiLLM.apiURL.endpoint')) {
+      const updatedUrl = vscode.workspace
+        .getConfiguration('localAIAssistant')
+        .get<string>('apiLLM.apiURL.endpoint', '')
+        ?.trim() || 'None';
+
+      chatPanel.webview.postMessage({
+        type: 'setLLMUrl',
+        value: updatedUrl
+      });
+    }
+  });
+
+  vscode.workspace.onDidChangeConfiguration((e) => {
+  if (chatPanel && e.affectsConfiguration('localAIAssistant.apiLLM.config.model')) {
+    const updatedModel = vscode.workspace
+      .getConfiguration('localAIAssistant')
+      .get<string>('apiLLM.config.model', '')
+      ?.trim() || 'None';
+
+      chatPanel.webview.postMessage({
+        type: 'setModel',
+        value: updatedModel
+      });
+    }
+  });
+
 
   // When a text document changes, recalc & push tokens
   vscode.workspace.onDidChangeTextDocument((e) => {
@@ -130,8 +157,21 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
     }
   );
 
-  chatPanel.onDidDispose(() => (chatPanel = undefined));
+  chatPanel.onDidDispose(() => {
+    chatPanel = undefined;
+  });
+
   chatPanel.webview.html = getWebviewContent(extensionContext, chatPanel);
+
+  const initialUrl = vscode.workspace
+    .getConfiguration('localAIAssistant')
+    .get<string>('apiLLM.apiURL.endpoint', '')
+    ?.trim() || 'None';
+
+  chatPanel.webview.postMessage({
+    type: 'setLLMUrl',
+    value: initialUrl
+  });
 
   // Immediately send the initial file‐context count
   postFileContextTokens(chatPanel);
@@ -159,7 +199,10 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         if (!userMessage) return;
 
         // Read config
-        const includeCtx = config.get<boolean>('context.includeFileContext', true);
+        const includeCtx = config.get<boolean>(
+          'context.includeFileContext',
+          true
+        );
         const apiType = config.get<string>('apiType', 'openai');
         const model = config.get<string>('model') || '';
 
@@ -203,8 +246,6 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         const beforeTokens = countMessageTokens(conversation);
 
         // Ensure a single, sticky system prompt:
-        // - On first turn: insert it.
-        // - On later turns: only replace if we're refreshing context (includeFileThisTurn).
         if (conversation.length === 0) {
           conversation.push(newSystem);
         } else if (conversation[0]?.role !== 'system') {
@@ -212,7 +253,6 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         } else if (includeFileThisTurn) {
           conversation[0] = newSystem;
         }
-        // Else: keep the existing system prompt so prior file context persists.
 
         // Append current user turn
         conversation.push({ role: 'user', content: userMessage });
@@ -271,7 +311,6 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
             },
             onDone: () => {
               // Optional: verify context presence
-              // console.log('SYS>>', conversation[0]?.content.slice(0, 200));
             }
           });
 
@@ -283,9 +322,6 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
         break;
       }
-
-
-
 
       case 'stopGeneration': {
         setStreamingActive(panel, false);
@@ -323,33 +359,42 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
       case 'insertCode': {
         if (evt.message) {
-          await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+          await vscode.commands.executeCommand(
+            'workbench.action.focusFirstEditorGroup'
+          );
           const ed = vscode.window.activeTextEditor;
           if (!ed) {
             vscode.window.showWarningMessage('No active editor.');
             return;
           }
           const sel = ed.selection;
-          const targetIndent = ed.document.lineAt(sel.active.line).text.match(/^\s*/)?.[0] ?? '';
+          const targetIndent =
+            ed.document
+              .lineAt(sel.active.line)
+              .text.match(/^\s*/)?.[0] ?? '';
 
           const raw = String(evt.message).replace(/\r\n/g, '\n');
           const lines = raw.split('\n');
 
           // Find min common indent across non-empty lines of snippet
-          const nonEmpty = lines.filter(l => l.trim().length > 0);
+          const nonEmpty = lines.filter((l) => l.trim().length > 0);
           const minIndentLen = nonEmpty.length
-            ? Math.min(...nonEmpty.map(l => (l.match(/^[ \t]*/)?.[0].length) ?? 0))
+            ? Math.min(
+                ...nonEmpty.map(
+                  (l) => (l.match(/^[ \t]*/)?.[0].length) ?? 0
+                )
+              )
             : 0;
 
           const reindented = lines
-            .map(l => {
+            .map((l) => {
               if (l.trim().length === 0) return '';
               // Remove only that min common indent, preserve deeper nesting
               return targetIndent + l.slice(minIndentLen);
             })
             .join('\n');
 
-          await ed.edit(edit => {
+          await ed.edit((edit) => {
             if (!sel.isEmpty) {
               edit.replace(sel, reindented);
             } else {
@@ -363,11 +408,21 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
       // Update context checkbox if changed outside of view
       case 'requestIncludeFileContext': {
-        const value = config.get<boolean>('context.includeFileContext', true);
+        const value = config.get<boolean>(
+          'context.includeFileContext',
+          true
+        );
         panel.webview.postMessage({
           type: 'includeFileContext',
           value
         });
+        break;
+      }
+
+      case 'invokeCommand': {
+        if (evt.command) {
+          vscode.commands.executeCommand(evt.command);
+        }
         break;
       }
     }
@@ -376,7 +431,8 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
   return chatPanel;
 }
 
-// Sends both `tokens` and `maxTokens` to the webview so it can render "Current file in context X of Y".
+// Sends both `tokens` and `maxTokens` to the webview so it can render
+// "Current file in context X of Y".
 function postFileContextTokens(panel: vscode.WebviewPanel) {
   // Always compute actual tokens from a real editor, even when webview focused
   const actualTokens = getFileContextTokens();
