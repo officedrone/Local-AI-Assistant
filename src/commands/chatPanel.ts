@@ -54,18 +54,30 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
   extensionContext = context;
 
   vscode.workspace.onDidChangeConfiguration((e) => {
-    if (chatPanel && e.affectsConfiguration('localAIAssistant.apiLLM.apiURL.endpoint')) {
-      const updatedUrl = vscode.workspace
-        .getConfiguration('localAIAssistant')
-        .get<string>('apiLLM.apiURL.endpoint', '')
-        ?.trim() || 'None';
+    if (!chatPanel) return;
 
-      chatPanel.webview.postMessage({
-        type: 'setLLMUrl',
-        value: updatedUrl
-      });
+    const config = vscode.workspace.getConfiguration('localAIAssistant');
+
+    if (e.affectsConfiguration('localAIAssistant.apiLLM.apiURL.endpoint')) {
+      const updatedUrl = config.get<string>('apiLLM.apiURL.endpoint', '')?.trim() || 'None';
+      chatPanel.webview.postMessage({ type: 'setLLMUrl', value: updatedUrl });
+    }
+
+    if (e.affectsConfiguration('localAIAssistant.apiLLM.config.apiType')) {
+      const updatedApiType = config.get<string>('apiLLM.config.apiType', '')?.trim() || 'None';
+      chatPanel.webview.postMessage({ type: 'setApiType', value: updatedApiType });
+    }
+
+    if (e.affectsConfiguration('localAIAssistant.context.contextSize')) {
+      const updatedMaxTokens = config.get<number>('context.contextSize', 4096);
+      chatPanel.webview.postMessage({ type: 'maxTokens', value: updatedMaxTokens });
     }
   });
+
+
+
+
+
 
   vscode.workspace.onDidChangeConfiguration((e) => {
   if (chatPanel && e.affectsConfiguration('localAIAssistant.apiLLM.config.model')) {
@@ -172,6 +184,17 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
     type: 'setLLMUrl',
     value: initialUrl
   });
+
+  const initialApiType = vscode.workspace
+    .getConfiguration('localAIAssistant')
+    .get<string>('apiLLM.config.apiType', '')
+    ?.trim() || 'None';
+
+  chatPanel.webview.postMessage({
+    type: 'setApiType',
+    value: initialApiType
+  });
+
 
   // Immediately send the initial file‐context count
   postFileContextTokens(chatPanel);
@@ -418,7 +441,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         });
         break;
       }
-
+      
       case 'invokeCommand': {
         if (evt.command) {
           vscode.commands.executeCommand(evt.command);

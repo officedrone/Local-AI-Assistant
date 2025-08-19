@@ -12,8 +12,13 @@ export function getWebviewContent(
     .get<boolean>('includeFileContext', true);
 
   const maxTokens = vscode.workspace
-    .getConfiguration(CONFIG_SECTION)
-    .get<number>('maxTokens', 4096);
+  .getConfiguration(CONFIG_SECTION)
+  .get<number>('context.contextSize', 4096);
+  panel.webview.postMessage({
+    type: 'maxTokens',
+    value: maxTokens,
+  });
+
 
   const modelName = vscode.workspace
   .getConfiguration('localAIAssistant')
@@ -34,6 +39,18 @@ export function getWebviewContent(
     type: 'setLLMUrl',
     value: displayUrl,
   });
+
+  const apiType = vscode.workspace
+    .getConfiguration('localAIAssistant')
+    .get<string>('apiLLM.apiType', 'openai') 
+    ?.trim() || 'openai';
+    
+  panel.webview.postMessage({
+    type: 'setApiType',
+    value: apiType,
+  });
+
+  
 
   // build URIs to our static resources
   const styleUri = panel.webview.asWebviewUri(
@@ -60,17 +77,22 @@ export function getWebviewContent(
 
     <div class="llm-info-row">
       <span id="llmURLBox" title="Click to set LLM URL">LLM Endpoint</span>
+      <span id="apiTypeBox" title="Select API Type">API Type</span>
       <span id="modelNameBox" title="Click to change model">Model Name</span>
     </div>
 
     <div id="sessionTokenContainer">
-      Token Usage | Chat: <span id="sessionTokenCount">0</span> |
-      File: <span id="fileTokenCount">0</span> |
-      Total: <span id="totalTokenCount">0</span>
-      <span id="maxTokenLabel">
-        / ${maxTokens}
-        <a href="#" id="editContextLink" title="Edit context size">⚙️</a>
-      </span>
+      <div class="tokenTitle">Token Usage</div>
+      <div class="tokenRow">
+        <div class="tokenItem">Chat: <span id="sessionTokenCount">0</span></div>
+        <div class="tokenItem">File: <span id="fileTokenCount">0</span></div>
+        <div class="tokenItem">
+          Total: <span id="totalTokenCount">0</span>
+          <span id="maxTokenLabel">Context size: <span id="maxTokensBox" title="Click to edit max tokens">${maxTokens}</span></span>
+        </div>
+      </div>
+    </div>
+
     </div>
   </div>
 
@@ -312,25 +334,87 @@ export function getWebviewContent(
           }
           break;
 
-        case 'setModel':
+        case 'setModel': {
           const modelSpan = document.getElementById('modelNameBox');
           if (modelSpan) {
             const displayName = ev.data.value && ev.data.value.trim()
               ? ev.data.value
               : 'None';
-            modelSpan.textContent = \`Model: \${displayName}\`;
+            modelSpan.textContent = 'Model: ' + displayName;
+
+            // Reattach click listener after updating content
+            modelSpan.onclick = () => {
+              vscode.postMessage({ 
+                type: 'invokeCommand', command: 'extension.selectModel' 
+              });
+            };
           }
           break;
+        }
 
-        case 'setLLMUrl':
+          
+        case 'setApiType': {
+          const apiTypeSpan = document.getElementById('apiTypeBox');
+          if (apiTypeSpan) {
+            const displayName = ev.data.value && ev.data.value.trim()
+              ? ev.data.value
+              : 'None';
+            apiTypeSpan.textContent = 'API: ' + displayName;
+
+            // Reattach click listener after updating content
+            apiTypeSpan.onclick = () => {
+              vscode.postMessage({
+                type: 'invokeCommand',
+                command: 'extension.selectApiType'
+              });
+            };
+          }
+          break;
+        }
+
+
+        case 'setLLMUrl': {
           const urlSpan = document.getElementById('llmURLBox');
           if (urlSpan) {
             const displayUrl = ev.data.value && ev.data.value.trim()
               ? ev.data.value
               : 'None';
-            urlSpan.textContent = \`LLM URL: \${displayUrl}\`;
+            urlSpan.textContent = 'URL: ' + displayUrl;
+
+            // Reattach click listener after updating content
+            urlSpan.onclick = () => {
+              vscode.postMessage({
+                type: 'invokeCommand',
+                command: 'extension.setApiURL'
+              });
+            };
           }
           break;
+        }
+
+        case 'maxTokens': {
+          const tokenSpan = document.getElementById('maxTokensBox');
+          if (tokenSpan) {
+            const displayTokens = typeof ev.data.value === 'number'
+              ? ev.data.value.toString()
+              : 'Unknown';
+
+            tokenSpan.textContent = displayTokens;
+            tokenSpan.title = 'Click to edit context size';
+
+            tokenSpan.onclick = () => {
+              vscode.postMessage({
+                type: 'invokeCommand',
+                key: 'extension.setContextSize'
+              });
+
+
+            };
+          }
+          break;
+        }
+
+
 
 
         case 'sessionTokenUpdate': {
@@ -343,8 +427,6 @@ export function getWebviewContent(
           totalSpan.style.color = totalTokens > ${maxTokens} ? 'orange' : '';
           break;
         }
-
-        // Optional hooks in case your extension posts these events:
         // Ensure we scroll when code is validated or code input is acknowledged by the backend.
         case 'codeValidated':
         case 'codeInput':
@@ -380,7 +462,9 @@ export function getWebviewContent(
 
 
     document.getElementById('modelNameBox').addEventListener('click', () => {
-      vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectModel' });
+      vscode.postMessage({ 
+      type: 'invokeCommand', command: 'extension.selectModel' 
+      });
     });
 
     document.getElementById('llmURLBox')?.addEventListener('click', () => {
@@ -389,6 +473,21 @@ export function getWebviewContent(
         command: 'extension.setApiURL'
       });
     });
+
+    document.getElementById('apiTypeBox')?.addEventListener('click', () => {
+      vscode.postMessage({
+        type: 'invokeCommand',
+        command: 'extension.selectApiType'
+      });
+    });
+
+    document.getElementById('maxTokensBox')?.addEventListener('click', () => {
+      vscode.postMessage({
+        type: 'invokeCommand',
+        command: 'extension.setContextSize'
+      });
+    });
+
 
 
 

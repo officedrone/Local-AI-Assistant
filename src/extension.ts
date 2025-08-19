@@ -6,6 +6,10 @@ import { fetchAvailableModels } from './api/apiRouter';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
+//quickPick helper for ApiType selector
+type QuickPickOptionsWithActive<T extends vscode.QuickPickItem> =
+vscode.QuickPickOptions & { activeItem?: T };
+
 export function activate(context: vscode.ExtensionContext) {
   // Read the initial apiType
   let lastApiType = vscode.workspace
@@ -19,6 +23,8 @@ export function activate(context: vscode.ExtensionContext) {
   registerSelectModelCommand(context);
   registerSetApiKeyCommand(context);
   registerSetApiUrlCommand(context);
+  registerSelectApiTypeCommand(context);
+  registerSetContextSizeCommand(context);
   createStatusBarItem(context);
 
   // 2) Watch for apiType changes and clear model wherever it was set
@@ -107,6 +113,43 @@ function registerSetApiUrlCommand(context: vscode.ExtensionContext) {
   context.subscriptions.push(setApiUrlCmd);
 }
 
+function registerSetContextSizeCommand(context: vscode.ExtensionContext) {
+  const setContextSizeCmd = vscode.commands.registerCommand(
+    'extension.setContextSize',
+    async () => {
+      const configKey = 'localAIAssistant.context.contextSize';
+
+      const current = vscode.workspace.getConfiguration().get<number>(configKey) ?? 4096;
+
+      const value = await vscode.window.showInputBox({
+        prompt: 'Enter the max token count',
+        placeHolder: 'e.g. 4096',
+        value: current.toString(),
+        validateInput: (input) => {
+          return /^\d+$/.test(input) ? null : 'Please enter a valid number';
+        }
+      });
+
+      if (value && /^\d+$/.test(value)) {
+        const parsed = parseInt(value, 10);
+
+        await vscode.workspace.getConfiguration().update(
+          configKey,
+          parsed,
+          vscode.ConfigurationTarget.Global
+        );
+
+        vscode.window.showInformationMessage(`✅ Max token count set to: ${parsed}`);
+      }
+    }
+  );
+
+  context.subscriptions.push(setContextSizeCmd);
+}
+
+
+
+
 // Status bar helper
 function createStatusBarItem(context: vscode.ExtensionContext) {
   const item = vscode.window.createStatusBarItem(
@@ -153,6 +196,61 @@ function registerSelectModelCommand(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(cmd);
 }
+
+// "Select API Type" command
+export function registerSelectApiTypeCommand(context: vscode.ExtensionContext) {
+  const cmd = vscode.commands.registerCommand(
+    'extension.selectApiType',
+    async () => {
+      const cfg = vscode.workspace.getConfiguration(
+        `${CONFIG_SECTION}.apiLLM.config`
+      );
+
+      // 1) Define your two options
+      const apiTypes: readonly vscode.QuickPickItem[] = [
+        { label: 'OpenAI' },
+        { label: 'Ollama' }
+      ];
+
+      // 2) Figure out which one is currently selected
+      const currentApiType = cfg.get<string>('apiType', 'OpenAI');
+      const activeApiType = apiTypes.find(
+        (t) => t.label.toLowerCase() === currentApiType.toLowerCase()
+      );
+
+      // 3) Build options with an optional activeItem
+      const options: QuickPickOptionsWithActive<vscode.QuickPickItem> = {
+        placeHolder: 'Select an API type',
+        activeItem: activeApiType
+      };
+
+      // 4) Force the QuickPickItem overload
+      const pickedItem = await vscode.window.showQuickPick<vscode.QuickPickItem>(
+        apiTypes,
+        options
+      );
+
+      // 5) Guard undefined and compare against the current
+      if (pickedItem && pickedItem.label !== currentApiType) {
+        await cfg.update(
+          'apiType',
+          pickedItem.label,
+          vscode.ConfigurationTarget.Global
+        );
+        vscode.window.showInformationMessage(
+          `✅ API type set to: ${pickedItem.label}`
+        );
+      }
+    }
+  );
+
+  context.subscriptions.push(cmd);
+}
+
+
+// Add to activate function after other register commands
+
+
 
 // “Set API Key” command
 function registerSetApiKeyCommand(context: vscode.ExtensionContext) {

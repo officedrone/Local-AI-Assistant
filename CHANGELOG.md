@@ -1,10 +1,17 @@
 # Change Log
 
-## 0.0.11 – OpenAI/Ollama proxy fixes
+
+## 0.0.12 – API Type + Context Size UI elements
+
+- ADD: ability to set API type and Context Size from UI
+- UPDATE: Styling of token counter
+- UPDATE: Some prompts to promote brevity of answers.
+
+## 0.0.11 – URL & Model selection UI elements
 
 - ADD: URL and Model selection commands, UI elements, styling, initial error handling
 - FIX: Removed unintended scroll to button on pressing copy or insert buttons within chat
-- UPDATE: Styling, code readability enhancements,
+- UPDATE: Styling, code readability enhancements
 
 ## 0.0.10 – OpenAI/Ollama proxy fixes
 

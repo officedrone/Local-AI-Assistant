@@ -364,32 +364,57 @@ button:active {
 
 #sessionTokenContainer {
   display: flex;
-  align-items: center;       
-  justify-content: center;    
+  align-items: baseline; /* Align to text baseline instead of center */
+  justify-content: space-between;
   gap: 8px;
-  flex-wrap: nowrap;           
-  overflow-x: auto;            
-  white-space: nowrap;         
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
   padding: 8px 14px;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-editorWidget-border);
   border-radius: 8px;
-  font-family: "Consolas", "Courier New", monospace;
+  font-family: var(--vscode-font-family);
   font-weight: 600;
   letter-spacing: 0.5px;
   box-shadow: inset 0 -1px 0 rgba(255,255,255,0.05);
 }
 
+.tokenTitle {
+  font-size: 0.9em;
+  font-weight: bold;
+  color: var(--vscode-input-foreground);
+  text-transform: uppercase;
+  margin: 0;
+  line-height: 1.2; /* Adjust to match tokenItem */
+}
+
+.tokenRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline; /* Ensure children align to baseline */
+}
+
+.tokenItem {
+  font-size: 0.85em;
+  color: var(--vscode-input-foreground);
+  white-space: nowrap;
+  line-height: 1.2; /* Match title line height */
+}
 
 
 #sessionTokenCount,
 #fileTokenCount,
-#totalTokenCount {
+#totalTokenCount,
+#maxTokensBox {
   padding: 4px 8px;
   border-radius: 4px;
   background-color: rgba(255,255,255,0.05);
   border: 1px solid var(--vscode-editorWidget-border);
-  font-size: 0.85em;
+  font-size: 0.85em; 
+  font-family: var(--vscode-font-family); 
+  font-weight: normal; 
   color: var(--vscode-input-foreground);
   text-align: center;
   white-space: nowrap;
@@ -399,10 +424,11 @@ button:active {
               transform 0.1s ease, box-shadow 0.2s ease;
 }
 
-#sessionTokenCount:hover,
-#fileTokenCount:hover,
-#totalTokenCount:hover {
+
+
+#maxTokensBox:hover {
   background-color: var(--btn-hover-bg);
+  cursor: pointer;
   color: white;
   transform: translateY(-1px);
   box-shadow: 0 4px 10px rgba(0,0,0,0.16);
@@ -421,10 +447,16 @@ button:active {
   display: flex;
   gap: 8px;
   margin-top: 4px;
+  cursor: pointer;
+}
+
+.llm-info-row span:hover {
+  color: #007acc;
 }
 
 #llmURLBox,
-#modelNameBox {
+#modelNameBox,
+#apiTypeBox {
   flex: 1; /* equal halves */
   padding: 4px 8px;
   border-radius: 4px;
@@ -441,7 +473,8 @@ button:active {
 }
 
 #llmURLBox:hover,
-#modelNameBox:hover {
+#modelNameBox:hover,
+#apiTypeBox:hover {
   background-color: var(--btn-hover-bg);
   color: white;
   transform: translateY(-1px);
