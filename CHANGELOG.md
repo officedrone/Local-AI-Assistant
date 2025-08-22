@@ -1,6 +1,13 @@
 # Change Log
 
 
+## 0.0.13 – API Type + Context Size UI elements
+
+- UPDATE: contextSize vars to contextSize
+- UPDATE: User bubble token count excludes current file token count (that one is added separately to the total)
+- FIX: File Context Tokens not being counted correctly when file excluded from context.
+
+
 ## 0.0.12 – API Type + Context Size UI elements
 
 - ADD: ability to set API type and Context Size from UI
@@ -49,9 +56,9 @@
 - readme update - setup section
 
 
-## 0.0.5 – Token counter, maxTokens config option
+## 0.0.5 – Token counter, contextSize config option
 
-- ADD: maxTokens config option to specify contex size
+- ADD: contextSize config option to specify contex size
 - ADD: token counters at the top of the chat section and chat bubbles
 - styling improvements
 - ADD: extension tags

@@ -44,7 +44,7 @@ export function getFileContextTokens(): number {
 export function getEffectiveFileContextTokens(): number {
   const includeCtx = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
-    .get<boolean>('includeFileContext', true);
+    .get<boolean>('context.includeFileContext', true);
   return includeCtx ? getFileContextTokens() : 0;
 }
 

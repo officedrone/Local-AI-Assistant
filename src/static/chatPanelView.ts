@@ -9,14 +9,15 @@ export function getWebviewContent(
   // read user settings
   const includeCtx = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
-    .get<boolean>('includeFileContext', true);
+    .get<boolean>('context.includeFileContext', true);
 
-  const maxTokens = vscode.workspace
+
+  const contextSize = vscode.workspace
   .getConfiguration(CONFIG_SECTION)
   .get<number>('context.contextSize', 4096);
   panel.webview.postMessage({
-    type: 'maxTokens',
-    value: maxTokens,
+    type: 'contextSize',
+    value: contextSize,
   });
 
 
@@ -88,7 +89,7 @@ export function getWebviewContent(
         <div class="tokenItem">File: <span id="fileTokenCount">0</span></div>
         <div class="tokenItem">
           Total: <span id="totalTokenCount">0</span>
-          <span id="maxTokenLabel">Context size: <span id="maxTokensBox" title="Click to edit max tokens">${maxTokens}</span></span>
+          <span id="maxTokenLabel">Context size: <span id="contextSizeBox" title="Click to edit max tokens">${contextSize}</span></span>
         </div>
       </div>
     </div>
@@ -316,12 +317,19 @@ export function getWebviewContent(
 
         case 'fileContextTokens': {
           const span = document.getElementById('contextTokenCount');
-          if (span && typeof tokens === 'number') {
-            span.textContent = '(' + tokens + ' tokens)';
-            span.style.color = tokens > ${maxTokens} ? 'red' : '';
+          const includeFile = contextCheckbox?.checked;
+          if (span) {
+            if (!includeFile) {
+              span.textContent = '(0 tokens)';
+              span.style.color = '';
+            } else if (typeof tokens === 'number') {
+              span.textContent = '(' + tokens + ' tokens)';
+              span.style.color = tokens > contextSize ? 'red' : '';
+            }
           }
           break;
         }
+
 
         case 'finalizeAI':
           if (assistantElem && typeof tokens === 'number') {
@@ -392,8 +400,8 @@ export function getWebviewContent(
           break;
         }
 
-        case 'maxTokens': {
-          const tokenSpan = document.getElementById('maxTokensBox');
+        case 'contextSize': {
+          const tokenSpan = document.getElementById('contextSizeBox');
           if (tokenSpan) {
             const displayTokens = typeof ev.data.value === 'number'
               ? ev.data.value.toString()
@@ -420,13 +428,17 @@ export function getWebviewContent(
         case 'sessionTokenUpdate': {
           document.getElementById('sessionTokenCount').textContent =
             String(sessionTokens);
-          document.getElementById('fileTokenCount').textContent =
-            String(fileContextTokens);
+
+          const fileTokenSpan = document.getElementById('fileTokenCount');
+          const includeFile = contextCheckbox?.checked;
+          fileTokenSpan.textContent = includeFile ? String(fileContextTokens) : '0';
+
           const totalSpan = document.getElementById('totalTokenCount');
           totalSpan.textContent = String(totalTokens);
-          totalSpan.style.color = totalTokens > ${maxTokens} ? 'orange' : '';
+          totalSpan.style.color = totalTokens > contextSize ? 'orange' : '';
           break;
         }
+
         // Ensure we scroll when code is validated or code input is acknowledged by the backend.
         case 'codeValidated':
         case 'codeInput':
@@ -481,7 +493,7 @@ export function getWebviewContent(
       });
     });
 
-    document.getElementById('maxTokensBox')?.addEventListener('click', () => {
+    document.getElementById('contextSizeBox')?.addEventListener('click', () => {
       vscode.postMessage({
         type: 'invokeCommand',
         command: 'extension.setContextSize'

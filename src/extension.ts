@@ -122,7 +122,7 @@ function registerSetContextSizeCommand(context: vscode.ExtensionContext) {
       const current = vscode.workspace.getConfiguration().get<number>(configKey) ?? 4096;
 
       const value = await vscode.window.showInputBox({
-        prompt: 'Enter the max token count',
+        prompt: 'Enter the Dontext size',
         placeHolder: 'e.g. 4096',
         value: current.toString(),
         validateInput: (input) => {
