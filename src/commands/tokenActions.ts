@@ -55,31 +55,38 @@ export function getChatTokenCount(): number {
 
 // Session token tracking
 let sessionTokenCount = 0;
+let spentFileContextTokens = 0;
 
 // Add tokens to the session total and update UI (guarded)
-export function addToSessionTokenCount(tokens: number): void {
+export function addToSessionTokenCount(chatTokens: number, fileContextTokens: number): void {
   const panel = getActiveChatPanel();
-
-  // If we know the panel and streaming is not active, ignore late chunks
   if (panel && !isStreamingActive(panel)) return;
 
-  sessionTokenCount += tokens;
+  sessionTokenCount += chatTokens;
+  spentFileContextTokens += fileContextTokens;
 
   if (panel) {
     postSessionTokenUpdate(
       panel,
       getSessionTokenCount(),
-      getEffectiveFileContextTokens()
+      getSpentFileContextTokens()
     );
   }
 }
 
+
 // Reset the session token count
 export function resetSessionTokenCount(): void {
   sessionTokenCount = 0;
+  spentFileContextTokens = 0;
 }
 
 // Get the current session token count
 export function getSessionTokenCount(): number {
   return sessionTokenCount;
+}
+
+// Get the spent file context token count
+export function getSpentFileContextTokens(): number {
+  return spentFileContextTokens;
 }

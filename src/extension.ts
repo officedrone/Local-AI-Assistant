@@ -122,7 +122,7 @@ function registerSetContextSizeCommand(context: vscode.ExtensionContext) {
       const current = vscode.workspace.getConfiguration().get<number>(configKey) ?? 4096;
 
       const value = await vscode.window.showInputBox({
-        prompt: 'Enter the Dontext size',
+        prompt: 'Enter the Context size',
         placeHolder: 'e.g. 4096',
         value: current.toString(),
         validateInput: (input) => {
@@ -246,10 +246,6 @@ export function registerSelectApiTypeCommand(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(cmd);
 }
-
-
-// Add to activate function after other register commands
-
 
 
 // “Set API Key” command

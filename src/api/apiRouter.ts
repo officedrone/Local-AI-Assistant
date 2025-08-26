@@ -102,7 +102,12 @@ export async function fetchAvailableModels(): Promise<string[]> {
   }
 }
 
-async function showHealthMessage(apiType: string) {
+//ServiceCheck for UI updates
+export async function checkServiceHealth(): Promise<{ serviceUp: boolean; hasModels: boolean; apiType: string }> {
+  const cfg = vscode.workspace.getConfiguration('localAIAssistant.apiLLM.config');
+  const apiTypeRaw = cfg.get<string>('apiType', 'OpenAI');
+  const apiType = apiTypeRaw.toLowerCase();
+
   let serviceUp = false;
   let hasModels = false;
 
@@ -120,6 +125,13 @@ async function showHealthMessage(apiType: string) {
     serviceUp = false;
   }
 
+  return { serviceUp, hasModels, apiType };
+}
+
+async function showHealthMessage(apiTypeFromRoute?: string) {
+  // Reuse the unified health check
+  const { serviceUp, hasModels, apiType } = await checkServiceHealth();
+
   let message: string;
   if (!serviceUp) {
     message =
@@ -131,7 +143,7 @@ async function showHealthMessage(apiType: string) {
     } else {
       message =
         '🚦 OpenAI‑compatible service is reachable but returned no models from /v1/models. ' +
-        'Verify that the service has models deployed models. Press CTRL+ALT+SHIFT+M (CMD+ALT+SHIFT+M for Mac) to select a model and load it if your environment supports JIT.';
+        'Verify that the service has models deployed. Press CTRL+ALT+SHIFT+M (CMD+ALT+SHIFT+M for Mac) to select a model and load it if your environment supports JIT.';
     }
   } else {
     message = '✅ Service is healthy but request failed. See console for details.';

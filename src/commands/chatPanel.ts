@@ -15,9 +15,15 @@ import {
   resetSessionTokenCount,
   getEffectiveFileContextTokens,
   setStreamingActive,
+  getSpentFileContextTokens,
   isStreamingActive
 } from './tokenActions';
-import { routeChatRequest } from '../api/apiRouter';
+
+import { 
+  routeChatRequest,
+  checkServiceHealth
+ } from '../api/apiRouter';
+
 import {
   markContextDirty,
   shouldIncludeContext,
@@ -51,7 +57,7 @@ function postToWebview(panel: vscode.WebviewPanel, type: string, value: any): vo
 
 // Posts the current session tokens + effective file tokens
 function refreshTokenStats(panel: vscode.WebviewPanel): void {
-  postSessionTokenUpdate(panel, getSessionTokenCount(), getEffectiveFileContextTokens());
+  postSessionTokenUpdate(panel, getSessionTokenCount(), getSpentFileContextTokens());
 }
 
 // Sends the LLM URL and API type from settings into the webview
@@ -82,27 +88,43 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
 
   // React to changes in our key settings
   vscode.workspace.onDidChangeConfiguration((e) => {
-    if (!chatPanel) {
-      return;
-    }
+    if (!chatPanel) { return; }
+
+    // Helper to post values safely
+    const post = (type: string, val: any) =>
+      postToWebview(chatPanel!, type, val);
+
     if (e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.apiURL.endpoint`)) {
-      postToWebview(chatPanel, 'setLLMUrl', (getConfig<string>('apiLLM.apiURL.endpoint', '')?.trim() || 'None'));
+      post('setLLMUrl',
+        getConfig<string>('apiLLM.apiURL.endpoint', '')?.trim() || 'None');
     }
     if (e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.config.apiType`)) {
-      postToWebview(chatPanel, 'setApiType', (getConfig<string>('apiLLM.config.apiType', '')?.trim() || 'None'));
+      post('setApiType',
+        getConfig<string>('apiLLM.config.apiType', '')?.trim() || 'None');
     }
     if (e.affectsConfiguration(`${CONFIG_SECTION}.context.contextSize`)) {
-      postToWebview(chatPanel, 'contextSize', getMaxContextTokens());
+      post('contextSize', getMaxContextTokens()); 
+    }
+
+    if (e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.config.model`)) {
+      post('setModel',
+        getConfig<string>('apiLLM.config.model', '')?.trim() || 'None');
+    }
+
+    if (
+      e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.apiURL.endpoint`) ||
+      e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.config.apiType`)
+    ) {
+      post('setLLMUrl', getConfig<string>('apiLLM.apiURL.endpoint', '')?.trim() || 'None');
+      post('setApiType', getConfig<string>('apiLLM.config.apiType', '')?.trim() || 'None');
+
+      // NEW: re-check health
+      checkServiceHealth().then(({ serviceUp, hasModels }) => {
+        post('apiReachability', { serviceUp, hasModels });
+      });
     }
   });
 
-  // Watch for model changes separately
-  vscode.workspace.onDidChangeConfiguration((e) => {
-    if (chatPanel && e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.config.model`)) {
-      const updatedModel = (getConfig<string>('apiLLM.config.model', '')?.trim() || 'None');
-      postToWebview(chatPanel, 'setModel', updatedModel);
-    }
-  });
 
   // When a text document changes, mark context dirty & push new token counts
   vscode.workspace.onDidChangeTextDocument((e) => {
@@ -180,7 +202,21 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
   chatPanel.webview.html = getWebviewContent(extensionContext, chatPanel);
 
   sendInitialSettings(chatPanel);
+
+  postToWebview(chatPanel, 'contextSize', getMaxContextTokens());
+  postToWebview(
+    chatPanel,
+    'setModel',
+    getConfig<string>('apiLLM.config.model', '').trim() || 'None'
+  );
+  postToWebview(
+    chatPanel,
+    'includeFileContext',
+    getConfig<boolean>('context.includeFileContext', true)
+  );
+
   postFileContextTokens(chatPanel);
+
 
   chatPanel.webview.onDidReceiveMessage(async (evt) => {
     const panel = chatPanel!;
@@ -210,8 +246,9 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
         // Read config values
         const includeCtx = getConfig<boolean>('context.includeFileContext', true);
-        const apiType = getConfig<string>('apiType', 'openai');
-        const model = getConfig<string>('model', '');
+        const apiType = getConfig<string>('apiLLM.config.apiType', 'openai');
+        const model = getConfig<string>('apiLLM.config.model', '');
+
 
         // Always read from a real editor even if the webview is focused
         const ed = getCodeEditor();
@@ -271,7 +308,8 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         }
 
         // Account for user tokens only
-        addToSessionTokenCount(userTurnTokens);
+        const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
+        addToSessionTokenCount(userTurnTokens, fileTokenCount);
 
         // Budget warning
         const total = countMessageTokens(conversation);
@@ -307,7 +345,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
               if (!isStreamingActive(panel)) return;
               assistantText += chunk;
               const chunkTokens = countTextTokens(chunk);
-              addToSessionTokenCount(chunkTokens);
+              addToSessionTokenCount(chunkTokens, 0);
               refreshTokenStats(panel);
             },
             onDone: () => {

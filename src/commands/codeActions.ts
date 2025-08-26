@@ -12,6 +12,7 @@ import encodingForModel from 'gpt-tokenizer';
 import {
   countMessageTokens,
   addToSessionTokenCount,
+  countTextTokens,
   setStreamingActive
 } from './tokenActions';
 
@@ -76,7 +77,8 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         // Count and display user tokens
         const userMessage = messages.find(m => m.role === 'user')!;
         const promptTokenCount = countMessageTokens([userMessage]);
-        addToSessionTokenCount(promptTokenCount);
+        const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
+        addToSessionTokenCount(promptTokenCount, fileTokenCount);
 
         panel.webview.postMessage({
           type: 'appendUser',
@@ -97,7 +99,8 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           lastFullCount = fullCount;
 
           // Update session token count by delta
-          addToSessionTokenCount(delta);
+          addToSessionTokenCount(delta, 0);
+
 
           // Send updated total tokens for this bubble
           panel.webview.postMessage({
@@ -165,7 +168,8 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         // Count and display user tokens
         const userMessage = messages.find(m => m.role === 'user')!;
         const promptTokenCount = countMessageTokens([userMessage]);
-        addToSessionTokenCount(promptTokenCount);
+        const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
+        addToSessionTokenCount(promptTokenCount, fileTokenCount);
 
         panel.webview.postMessage({
           type: 'appendUser',
@@ -184,7 +188,8 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           const delta = fullCount - lastFullCount;
           lastFullCount = fullCount;
 
-          addToSessionTokenCount(delta);
+          addToSessionTokenCount(delta, 0);
+
 
           panel.webview.postMessage({
             type: 'tokenUpdate',

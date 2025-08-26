@@ -1,4 +1,6 @@
+// src/static/chatPanelView.ts
 import * as vscode from 'vscode';
+import { getSessionTokenCount, getSpentFileContextTokens } from '../commands/tokenActions';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -83,17 +85,29 @@ export function getWebviewContent(
     </div>
 
     <div id="sessionTokenContainer">
-      <div class="tokenTitle">Token Usage</div>
+      <div class="tokenTitle">Session Token Usage</div>
       <div class="tokenRow">
-        <div class="tokenItem">Chat: <span id="sessionTokenCount">0</span></div>
-        <div class="tokenItem">File: <span id="fileTokenCount">0</span></div>
         <div class="tokenItem">
-          Total: <span id="totalTokenCount">0</span>
-          <span id="maxTokenLabel">Context size: <span id="contextSizeBox" title="Click to edit max tokens">${contextSize}</span></span>
+          Chat: <span id="sessionTokenCount">${getSessionTokenCount()}</span>
+        </div>
+        <div class="tokenItem">
+          Files: <span id="fileTokenCount">${getSpentFileContextTokens()}</span>
+        </div>
+        <div class="tokenItem">
+          Total:
+          <span id="totalTokenCount">
+            ${getSessionTokenCount() + getSpentFileContextTokens()}
+          </span>
+          <span id="maxTokenLabel">
+            Context size:
+            <span
+              id="contextSizeBox"
+              title="Click to edit max tokens"
+            >${contextSize}</span>
+          </span>
         </div>
       </div>
     </div>
-
     </div>
   </div>
 
@@ -122,6 +136,7 @@ export function getWebviewContent(
   <script src="${mdItUri}"></script>
 <script>
   (function () {
+    let contextSize = ${contextSize};
     const vscode = acquireVsCodeApi();
     const chat = document.getElementById('chat-container');
     const scrollBtn = document.getElementById('scrollToBottomButton');
@@ -305,8 +320,7 @@ export function getWebviewContent(
           sendBtn.textContent = 'Send';
           assistantRaw = '';
           assistantElem = null;
-          // After stream ends, ensure we're at the bottom
-          scrollToBottomImmediate(true);
+
           break;
 
         case 'appendUser':
@@ -419,6 +433,7 @@ export function getWebviewContent(
 
             };
           }
+          contextSize = ev.data.value;
           break;
         }
 
@@ -499,8 +514,6 @@ export function getWebviewContent(
         command: 'extension.setContextSize'
       });
     });
-
-
 
 
     newSessionBtn.onclick = function () {

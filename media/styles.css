@@ -124,7 +124,7 @@ message:hover {
   align-self: flex-end;
   background: linear-gradient(to right, var(--user-bg), var(--btn-hover-bg));
   color: var(--user-text);
-  text-align: right;
+  text-align: left;
 }
 .user-message:hover {
   background: linear-gradient(to right, var(--btn-hover-bg), var(--user-bg));
