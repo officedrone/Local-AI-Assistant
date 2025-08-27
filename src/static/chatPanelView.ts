@@ -88,7 +88,7 @@ export function getWebviewContent(
       <span id="llmURLBox" title="Click to set LLM URL">LLM Endpoint</span>
       <span id="apiTypeBox" title="Select API Type">API Type</span>
       <span id="modelNameBox" title="Click to change model">Model Name</span>
-      <button id="refreshSvcBtn" class="refreshSvcBtn" title="Refresh status">⟳</button>
+      <button id="refreshSvcBtn" class="refreshSvcBtn" title="Refresh URL / API / Model Status">⟳</button>
     </div>
 
     <div id="sessionTokenContainer">

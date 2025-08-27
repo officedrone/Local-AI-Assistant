@@ -1,12 +1,16 @@
 # Change Log
 
+## 0.0.14 – API Type + Context Size UI elements
+
+- ADD: visual service healtcheck and relevant handlers
+- ADD: 'spent' tokens as session count (flipping between files no longer changes Total tokens used in session)
+- FIX: force-scroll reduction, some styling cleanup
 
 ## 0.0.13 – API Type + Context Size UI elements
 
 - UPDATE: contextSize vars to contextSize
 - UPDATE: User bubble token count excludes current file token count (that one is added separately to the total)
 - FIX: File Context Tokens not being counted correctly when file excluded from context.
-
 
 ## 0.0.12 – API Type + Context Size UI elements
 
@@ -24,7 +28,6 @@
 
 - FIX: Ollama/OpenAI-compatible endpoints not respecting config URL setting
 - FIX: OpenAI-compatible endpoint model selector logic
-
 
 ## 0.0.9 – File context fixes, introduced contextHandler.ts
 
@@ -47,7 +50,6 @@
 - FIX: fix auto-scroll breaking in certain instances
 - FIX: bug where file context checkbox was referencing stale config setting URI
 
-
 ## 0.0.6 – Bugfix, Settings re-org, setup instructions
 
 - FIX: content not being passed correctly when chatting from input box
@@ -55,14 +57,12 @@
 - ADD: settings categories
 - readme update - setup section
 
-
 ## 0.0.5 – Token counter, contextSize config option
 
 - ADD: contextSize config option to specify contex size
 - ADD: token counters at the top of the chat section and chat bubbles
 - styling improvements
 - ADD: extension tags
-
 
 ## 0.0.4 – Context menu and language auto-detect
 
@@ -72,26 +72,24 @@
 
 ## 0.0.3 – Tooltip Tweaks
 
-- tweak tooltip agressiveness; 
-- ADD: tooltip disable button to tooltip; 
-- update readme; 
+- tweak tooltip agressiveness;
+- ADD: tooltip disable button to tooltip;
+- update readme;
 - update chatpanel size
-
 
 ## 0.0.2 – Prep for publishing to marketplace
 
 - formatting updates for publishing in marketplace
 
-
 ## 0.0.1 – Initial Release
 
-- Chat panel with markdown rendering and code streaming  
+- Chat panel with markdown rendering and code streaming
 - Code validation command
-- Code completion command  
-- Idle-based tooltip with hover interaction  
-- Configurable API endpoint 
-- New secure API key setup command  
-- Model selection interface  
+- Code completion command
+- Idle-based tooltip with hover interaction
+- Configurable API endpoint
+- New secure API key setup command
+- Model selection interface
 - Extension settings panel command
 
 ---
