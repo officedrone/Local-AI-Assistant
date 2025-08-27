@@ -58,7 +58,7 @@ body {
     ),
     var(--vscode-input-background);
   border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 12px;
+  border-radius: 4px;
   scroll-behavior: smooth;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
@@ -72,7 +72,7 @@ body {
 }
 #chat-container::-webkit-scrollbar-thumb {
   background-color: var(--btn-bg);
-  border-radius: 6px;
+  border-radius: 4px;
   transition: background-color 0.2s ease;
 }
 #chat-container::-webkit-scrollbar-thumb:hover {
@@ -159,7 +159,7 @@ message:hover {
 pre {
   background: var(--code-bg);
   border: 1px solid var(--code-border);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 0.8em 1.2em;
   font-family: monospace;
   font-size: 0.9em;
@@ -177,11 +177,11 @@ code {
 /* ─── BUTTONS & LINKS ───────────────────────── */
 #newSessionButton,
 #settingsButton {
-  padding: 12px 12px;
+  padding: 6px 6px;
   background: var(--btn-bg);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
   box-shadow: 0 2px 6px rgba(0,0,0,0.12);
@@ -214,7 +214,7 @@ button:active {
   color: var(--vscode-button-foreground);
   background-color: var(--btn-bg);
   border: 1px solid var(--btn-hover-bg);
-  border-radius: 6px;
+  border-radius: 4px;
   text-decoration: none;
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease, filter 0.2s ease;
@@ -237,7 +237,7 @@ button:active {
   background: var(--btn-bg);
   color: var(--vscode-button-foreground);
   border: 1px solid var(--btn-hover-bg);
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   display: none;
   z-index: 100;
@@ -257,7 +257,7 @@ button:active {
   flex-direction: row;
   align-items: flex-end;
   padding-top: 10px;
-  padding-bottom: 10px;
+  padding-bottom: 4px;
   gap: 10px;
   width: 100%;
   position: sticky;
@@ -269,7 +269,7 @@ button:active {
   flex: 1;
   padding: 10px;
   border: 1px solid var(--vscode-input-border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   resize: vertical;
@@ -292,7 +292,7 @@ button:active {
   background: var(--btn-bg);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   text-align: center;
   transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
@@ -312,12 +312,12 @@ button:active {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 10px;
+  gap: 8px; 
+  padding: 6px 12px; 
   margin-top: 8px;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 6px;
+  border-radius: 4px; 
 }
 
 #fileContextContainer input[type="checkbox"] {
@@ -329,6 +329,13 @@ button:active {
 }
 
 /* ─── LAYOUT STRUCTURE ───────────────────────── */
+
+.session-header {
+  display: flex;
+  align-items: center; 
+  gap: 12px;           
+}
+
 .button-stack {
   height: 100%;
   display: flex;
@@ -347,7 +354,7 @@ button:active {
 
 .session-buttons {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
 }
 
@@ -356,7 +363,7 @@ button:active {
   color: var(--vscode-input-foreground);
   background: var(--vscode-editor-background);
   margin-top: 4px;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 /* ─── SESSION TOKENS PANEL (Scoreboard look) ───────────────────── */
@@ -373,7 +380,7 @@ button:active {
   padding: 8px 14px;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--vscode-font-family);
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -427,20 +434,11 @@ button:active {
 
 
 #contextSizeBox:hover {
-  background-color: var(--btn-hover-bg);
+  background-color: var(--vscode-input-foreground);
   cursor: pointer;
-  color: white;
+  color: var(--vscode-input-background);
   transform: translateY(-1px);
   box-shadow: 0 4px 10px rgba(0,0,0,0.16);
-}
-
-
-/* Keep settings+stack as one block */
-.settings-with-stack {
-  display: flex;
-  flex-direction: column; /* Stack vertically */
-  align-items: center; /* Center under settings button */
-  gap: 4px;
 }
 
 .llm-info-row {
@@ -448,6 +446,7 @@ button:active {
   gap: 8px;
   margin-top: 4px;
   cursor: pointer;
+  flex-wrap: nowrap;
 }
 
 .llm-info-row span:hover {
@@ -457,10 +456,11 @@ button:active {
 #llmURLBox,
 #modelNameBox,
 #apiTypeBox {
-  flex: 1; /* equal halves */
+  flex: 1 1 auto;
+  min-width: fit-content;
   padding: 4px 8px;
   border-radius: 4px;
-  background-color: rgba(255,255,255,0.05);
+  background-color: var(--vscode-input-background);
   border: 1px solid var(--vscode-editorWidget-border);
   font-size: 0.85em;
   color: var(--vscode-input-foreground);
@@ -475,12 +475,58 @@ button:active {
 #llmURLBox:hover,
 #modelNameBox:hover,
 #apiTypeBox:hover {
-  background-color: var(--btn-hover-bg);
+  background-color: var(--vscode-input-foreground);
   color: white;
   transform: translateY(-1px);
   box-shadow: 0 4px 10px rgba(0,0,0,0.16);
   transition: background-color 0.2s ease, color 0.2s ease,
               transform 0.1s ease, box-shadow 0.2s ease;
 
+}
+
+
+.refreshSvcBtn {
+  background: none;
+  border: none;
+  padding: 1px 1px;
+  cursor: pointer;
+  font-size: 1.5em;
+  line-height: 1;
+  color: inherit; 
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease, transform 0.1s ease;
+}
+
+.refreshSvcBtn:hover {
+  color: var(--vscode-input-foreground);
+  transform: translateY(-1px);
+}
+
+.refreshSvcBtn:active {
+  transform: scale(0.95);
+}
+
+#serviceStatusContainer {
+  display: inline-flex;             
+  align-items: center;
+  justify-content: center;
+  gap: 8px;                          
+  padding: 6px 16px;                 
+  border-radius: 999px;             
+  font-size: 0.95em;
+  border: 1px solid var(--vscode-editorWidget-border); 
+  margin: 0 auto;                    
+}
+
+#serviceStatusContainer .status-label {
+  color: var(--vscode-input-foreground);
+  font-weight: 600;
+}
+
+#api-status {
+  font-weight: bold;
+  white-space: nowrap;              
 }
 

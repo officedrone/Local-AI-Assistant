@@ -73,15 +73,22 @@ export function getWebviewContent(
 </head>
 <body>
   <div id="session-controls">
+  <div class="session-header">
     <div class="session-buttons">
       <button id="newSessionButton">📄 New Session</button>
-      <button id="settingsButton" title="Settings">⚙️</button>
+      <button id="settingsButton" title="Settings">⚙️</button>     
     </div>
+    <div id="serviceStatusContainer">
+      <span class="status-label">LLM Service Status:</span>
+      <span id="api-status"></span>
+    </div>
+  </div>
 
     <div class="llm-info-row">
       <span id="llmURLBox" title="Click to set LLM URL">LLM Endpoint</span>
       <span id="apiTypeBox" title="Select API Type">API Type</span>
       <span id="modelNameBox" title="Click to change model">Model Name</span>
+      <button id="refreshSvcBtn" class="refreshSvcBtn" title="Refresh status">⟳</button>
     </div>
 
     <div id="sessionTokenContainer">
@@ -370,6 +377,7 @@ export function getWebviewContent(
                 type: 'invokeCommand', command: 'extension.selectModel' 
               });
             };
+            vscode.postMessage({ type: 'refreshApiStatus' });
           }
           break;
         }
@@ -437,9 +445,6 @@ export function getWebviewContent(
           break;
         }
 
-
-
-
         case 'sessionTokenUpdate': {
           document.getElementById('sessionTokenCount').textContent =
             String(sessionTokens);
@@ -453,6 +458,85 @@ export function getWebviewContent(
           totalSpan.style.color = totalTokens > contextSize ? 'orange' : '';
           break;
         }
+        
+        case 'apiReachability': {
+          const indicator = document.getElementById('api-status');
+          const urlSpan = document.getElementById('llmURLBox');
+          const apiTypeSpan = document.getElementById('apiTypeBox');
+          const modelSpan = document.getElementById('modelNameBox');
+
+          if (!indicator || !urlSpan || !apiTypeSpan || !modelSpan) break;
+
+          const { serviceUp, hasModels, models } = ev.data.value;
+
+          // Softer palette
+          const softRed    = '#d66';
+          const softOrange = '#d68b00';
+          const softGreen  = '#2e8540';
+
+          const currentUrl = urlSpan.textContent.replace(/^URL:\s*/i, '').trim();
+
+          // Normalize model IDs into array of strings
+          let modelIds = [];
+          if (Array.isArray(models)) {
+            if (typeof models[0] === 'string') {
+              modelIds = models.map(m => m.trim());
+            } else {
+              modelIds = models.map(m => m && m.id ? String(m.id).trim() : '').filter(Boolean);
+            }
+          } else if (models && Array.isArray(models.data)) {
+            modelIds = models.data
+              .map(m => m && m.id ? String(m.id).trim() : '')
+              .filter(Boolean);
+          }
+
+          // Lowercase for case-insensitive matching
+          const normalizedIds = modelIds.map(id => id.toLowerCase());
+          const currentModel = modelSpan.textContent.replace(/^Model:\s*/, '').trim().toLowerCase();
+
+          if (!currentUrl || currentUrl.toLowerCase() === 'none') {
+            indicator.textContent = '🔌 No URL';
+            indicator.style.color = softRed;
+            urlSpan.style.color = softRed;
+            apiTypeSpan.style.color = softRed;
+            modelSpan.style.color = softRed;
+          }
+          else if (!serviceUp) {
+            indicator.textContent = '🔌 Offline';
+            indicator.style.color = softRed;
+            urlSpan.style.color = softRed;
+            apiTypeSpan.style.color = softRed;
+            modelSpan.style.color = softRed;
+          }
+          else if (!hasModels) {
+            indicator.textContent = '🚦 No models';
+            indicator.style.color = softOrange;
+            urlSpan.style.color = softGreen; // reachable but wrong API
+            apiTypeSpan.style.color = softOrange;
+            modelSpan.style.color = softOrange;
+          }
+          else {
+            // API up with models
+            urlSpan.style.color = softGreen;
+            apiTypeSpan.style.color = softGreen;
+
+            if (normalizedIds.includes(currentModel)) {
+              indicator.textContent = '✅ Online';
+              indicator.style.color = softGreen;
+              modelSpan.style.color = softGreen;
+            } else {
+              indicator.textContent = '❌ Wrong model';
+              indicator.style.color = softOrange;
+              modelSpan.style.color = softOrange;
+              // URL stays green for reachable service
+              urlSpan.style.color = softGreen;
+            }
+          }
+          break;
+        }
+
+
+
 
         // Ensure we scroll when code is validated or code input is acknowledged by the backend.
         case 'codeValidated':
@@ -515,6 +599,10 @@ export function getWebviewContent(
       });
     });
 
+    document.getElementById('refreshSvcBtn')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'refreshApiStatus' });
+    });
+
 
     newSessionBtn.onclick = function () {
       userInitiatedScroll = false;
@@ -570,6 +658,8 @@ export function getWebviewContent(
         vscode.postMessage({ type: 'insertCode', message: code });
         // Code input action (insert) — scroll to bottom
       }
+
+      vscode.postMessage({ type: 'webviewReady' });
     });
   })();
 </script>

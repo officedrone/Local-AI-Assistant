@@ -21,7 +21,9 @@ import {
 
 import { 
   routeChatRequest,
-  checkServiceHealth
+  checkServiceHealth,
+  startHealthLoop,
+  stopHealthLoop
  } from '../api/apiRouter';
 
 import {
@@ -68,6 +70,23 @@ function sendInitialSettings(panel: vscode.WebviewPanel): void {
   postToWebview(panel, 'setApiType', initialApiType);
 }
 
+//Health check posts
+async function updateApiStatus(panel: vscode.WebviewPanel) {
+  const health = await checkServiceHealth();
+  panel.webview.postMessage({
+    type: 'apiReachability',
+    value: health
+  });
+
+  // Only run the 10s loop if the service is up AND hasModels === true
+  if (health.serviceUp && health.hasModels) {
+    startHealthLoop(panel);
+  } else {
+    stopHealthLoop();
+  }
+}
+
+
 // Code editor definition for context purposes (ignores the webview)
 function getCodeEditor(): vscode.TextEditor | undefined {
   const active = vscode.window.activeTextEditor;
@@ -94,34 +113,33 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
     const post = (type: string, val: any) =>
       postToWebview(chatPanel!, type, val);
 
+    let shouldRecheck = false;
+
     if (e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.apiURL.endpoint`)) {
       post('setLLMUrl',
         getConfig<string>('apiLLM.apiURL.endpoint', '')?.trim() || 'None');
+      shouldRecheck = true;
     }
+
     if (e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.config.apiType`)) {
       post('setApiType',
         getConfig<string>('apiLLM.config.apiType', '')?.trim() || 'None');
+      shouldRecheck = true;
     }
+
     if (e.affectsConfiguration(`${CONFIG_SECTION}.context.contextSize`)) {
-      post('contextSize', getMaxContextTokens()); 
+      post('contextSize', getMaxContextTokens());
     }
 
     if (e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.config.model`)) {
       post('setModel',
         getConfig<string>('apiLLM.config.model', '')?.trim() || 'None');
+      // Re-check health so model availability color updates right away
+      shouldRecheck = true;
     }
 
-    if (
-      e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.apiURL.endpoint`) ||
-      e.affectsConfiguration(`${CONFIG_SECTION}.apiLLM.config.apiType`)
-    ) {
-      post('setLLMUrl', getConfig<string>('apiLLM.apiURL.endpoint', '')?.trim() || 'None');
-      post('setApiType', getConfig<string>('apiLLM.config.apiType', '')?.trim() || 'None');
-
-      // NEW: re-check health
-      checkServiceHealth().then(({ serviceUp, hasModels }) => {
-        post('apiReachability', { serviceUp, hasModels });
-      });
+    if (shouldRecheck) {
+      updateApiStatus(chatPanel);
     }
   });
 
@@ -156,6 +174,7 @@ export function registerChatPanelCommand(context: vscode.ExtensionContext) {
   );
 }
 
+
 export function postSessionTokenUpdate(
   panel: vscode.WebviewPanel,
   sessionTokens: number,
@@ -173,6 +192,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
   if (chatPanel) {
     chatPanel.reveal(vscode.ViewColumn.Two);
     postFileContextTokens(chatPanel);
+    updateApiStatus(chatPanel);
     refreshTokenStats(chatPanel);
     return chatPanel;
   }
@@ -196,12 +216,17 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
   );
 
   chatPanel.onDidDispose(() => {
+    stopHealthLoop();
     chatPanel = undefined;
   });
+
 
   chatPanel.webview.html = getWebviewContent(extensionContext, chatPanel);
 
   sendInitialSettings(chatPanel);
+
+  // Run health check immediately on first launch
+  updateApiStatus(chatPanel);
 
   postToWebview(chatPanel, 'contextSize', getMaxContextTokens());
   postToWebview(
@@ -217,6 +242,12 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
 
   postFileContextTokens(chatPanel);
 
+
+  chatPanel.onDidChangeViewState((e) => {
+    if (e.webviewPanel.visible) {
+      updateApiStatus(e.webviewPanel);
+    }
+  });
 
   chatPanel.webview.onDidReceiveMessage(async (evt) => {
     const panel = chatPanel!;
@@ -356,8 +387,10 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
           setStreamingActive(panel, false);
         } catch (err: any) {
           setStreamingActive(panel, false);
+          await updateApiStatus(panel);
           throw err;
         }
+
 
         break;
       }
@@ -390,6 +423,7 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         chatPanel = getOrCreateChatPanel();
         lastFileContextTokens = getEffectiveFileContextTokens();
         refreshTokenStats(chatPanel);
+        updateApiStatus(chatPanel);
         break;
       }
 
@@ -456,6 +490,16 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
         if (evt.command) {
           vscode.commands.executeCommand(evt.command);
         }
+        break;
+      }
+
+      case 'webviewReady': {
+        updateApiStatus(panel);
+        break;
+      }
+
+      case 'refreshApiStatus': {
+        updateApiStatus(panel);
         break;
       }
     }
