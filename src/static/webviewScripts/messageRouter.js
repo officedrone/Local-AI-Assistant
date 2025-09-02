@@ -1,5 +1,4 @@
-// /src/static/webviewScripts/messageRouter.js
-
+// src/static/webviewScripts/messageRouter.js
 import { appendBubble, getStreamingState, setStreamingState } from './chat.js';
 import { updateContextTokens } from './contextControls.js';
 import { updateTokenPanel } from './sessionTokens.js';
@@ -12,6 +11,10 @@ import {
 } from './scrollUtils.js';
 import { renderMd, injectLinks } from './markdownUtils.js';
 
+// Track thinking state
+let inThinkingBlock = false;
+let thinkingBuffer = '';
+
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
     const { type, message, tokens, sessionTokens, fileContextTokens, totalTokens } = ev.data;
@@ -21,7 +24,6 @@ export function setupMessageRouter(vscode, contextSize) {
         const bubble = appendBubble('…', 'ai-message thinking');
         setStreamingState({ isStreaming: true, assistantElem: bubble, assistantRaw: '' });
 
-        // Reset any accidental user-scroll lock and pin to bottom
         setUserInitiatedScroll(false);
         setAutoScrollEnabled(true);
 
@@ -32,11 +34,61 @@ export function setupMessageRouter(vscode, contextSize) {
 
       case 'streamChunk': {
         const state = getStreamingState();
-        if (state.assistantElem?.classList.contains('thinking')) {
-          state.assistantElem.classList.remove('thinking');
+
+        let chunk = message || '';
+
+        // Detect start of <think>
+        if (chunk.includes('<think>')) {
+          inThinkingBlock = true;
+          thinkingBuffer = '';
+          chunk = chunk.replace('<think>', '');
+          // Mark bubble visually as thinking
+          state.assistantElem.classList.add('thinking');
         }
 
-        const nextRaw = (state.assistantRaw || '') + (message || '');
+        // Detect end of </think>
+          if (chunk.includes('</think>')) {
+            inThinkingBlock = false;
+            chunk = chunk.replace('</think>', '');
+            thinkingBuffer = '';
+
+            // Remove thinking style
+            state.assistantElem.classList.remove('thinking');
+
+            // Reset assistantRaw so final answer overwrites thinking text
+            setStreamingState({ ...state, assistantRaw: '' });
+
+            // Optionally clear the bubble content entirely
+            const body = state.assistantElem.querySelector('.markdown-body');
+            body.innerHTML = '<strong>Assistant:</strong><br/>'; // no dots, ready for real content
+
+            return; // skip normal render this tick
+          }
+
+        if (inThinkingBlock) {
+          thinkingBuffer += chunk;
+          const body = state.assistantElem.querySelector('.markdown-body');
+
+          // Separate fixed header from scrollable content
+          body.innerHTML = `
+            <div class="thinking-header">💡 Thinking…</div>
+            <div class="thinking-content">${renderMd(thinkingBuffer)}</div>
+          `;
+
+          // Auto-scroll the inner thinking content itself
+          const contentEl = body.querySelector('.thinking-content');
+          if (contentEl) {
+            contentEl.scrollTop = contentEl.scrollHeight;
+          }
+
+          if (shouldAutoScroll) scrollToBottomImmediate(true);
+          return;
+        }
+
+
+
+        // Normal streaming after thinking block
+        const nextRaw = (state.assistantRaw || '') + chunk;
         setStreamingState({ ...state, assistantRaw: nextRaw });
 
         const body = state.assistantElem.querySelector('.markdown-body');
@@ -60,8 +112,14 @@ export function setupMessageRouter(vscode, contextSize) {
 
       case 'endStream':
       case 'stoppedStream':
+        const state = getStreamingState();
+        if (state.assistantElem) {
+          state.assistantElem.classList.remove('thinking'); // remove pulsating style
+        }
         setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
         document.getElementById('sendButton').textContent = 'Send';
+        inThinkingBlock = false;
+        thinkingBuffer = '';
         break;
 
       case 'appendUser':
@@ -82,7 +140,6 @@ export function setupMessageRouter(vscode, contextSize) {
           tdiv.textContent = '🧮 ' + tokens + ' tokens';
           state.assistantElem.querySelector('.markdown-body').appendChild(tdiv);
 
-          // Only scroll if auto-scroll is still enabled
           if (shouldAutoScroll) {
             scrollToBottomImmediate(true);
           }
@@ -156,7 +213,6 @@ export function setupMessageRouter(vscode, contextSize) {
 
       case 'codeValidated':
       case 'codeInput':
-        // For code changes or validations, always scroll to bottom
         scrollToBottomImmediate(true);
         break;
 

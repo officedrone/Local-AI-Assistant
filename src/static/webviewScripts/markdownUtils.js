@@ -1,4 +1,4 @@
-// markdownUtils.js
+// src/static/webviewScripts/markdownUtils.js
 export const md = window.markdownit({ html: false, linkify: true, typographer: true });
 
 export function renderMd(text) {

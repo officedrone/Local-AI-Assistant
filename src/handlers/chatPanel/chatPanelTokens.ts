@@ -1,3 +1,4 @@
+// src/handlers/chatPanel/chatPanelTokens.ts
 import * as vscode from 'vscode';
 import { getSessionTokenCount, getSpentFileContextTokens, getEffectiveFileContextTokens } from '../../commands/tokenActions';
 import { getMaxContextTokens } from './chatPanelConfig';

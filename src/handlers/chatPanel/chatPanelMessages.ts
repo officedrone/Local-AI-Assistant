@@ -1,3 +1,4 @@
+// src/handlers/chatPanel/chatPanelMessages.ts
 import * as vscode from 'vscode';
 import { getConfig, getMaxContextTokens, updateApiStatus } from './chatPanelConfig';
 import { postFileContextTokens, refreshTokenStats } from './chatPanelTokens';
@@ -15,6 +16,7 @@ import {
 import { shouldIncludeContext, markContextDirty } from '../contextHandler';
 import { buildOpenAIMessages, buildOllamaMessages, PromptContext, getLanguage } from '../../commands/promptBuilder';
 import { routeChatRequest } from '../../api/apiRouter';
+import { getOrCreateChatPanel } from './chatPanelLifecycle';
 
 const CONFIG_SECTION = 'localAIAssistant';
 const abortControllers = new WeakMap<vscode.WebviewPanel, AbortController>();
@@ -54,13 +56,20 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         );
         break;
 
-      case 'newSession':
-        resetSessionTokenCount();
-        conversation = [];
-        lastFileContextTokens = 0;
-        panel.dispose();
-        onDispose();
-        break;
+        case 'newSession': {
+          resetSessionTokenCount();
+          conversation = [];
+          lastFileContextTokens = 0;
+          panel.dispose();
+          onDispose();
+
+          const newPanel = getOrCreateChatPanel();
+          lastFileContextTokens = getEffectiveFileContextTokens();
+          refreshTokenStats(newPanel);
+          updateApiStatus(newPanel);
+          break;
+        }
+
 
       case 'insertCode':
         await handleInsertCode(evt.message);

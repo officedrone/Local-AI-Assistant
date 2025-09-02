@@ -1,3 +1,5 @@
+// src/handlers/chatPanel/chatPanelLifecycle.ts
+
 import * as vscode from 'vscode';
 import { getWebviewContent } from '../../static/chatPanelView';
 import { sendInitialSettings, updateApiStatus, watchConfigChanges } from './chatPanelConfig';

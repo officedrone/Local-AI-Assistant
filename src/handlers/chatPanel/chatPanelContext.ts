@@ -1,3 +1,5 @@
+// src/handlers/chatPanel/chatPanelContext.ts
+
 import * as vscode from 'vscode';
 
 export function getCodeEditor(): vscode.TextEditor | undefined {

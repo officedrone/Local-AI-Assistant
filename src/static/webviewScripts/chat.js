@@ -1,4 +1,4 @@
-// chat.js
+// src/static/webviewScripts/chat.js
 import { renderMd, injectLinks } from './markdownUtils.js';
 import { scrollToBottom } from './scrollUtils.js';
 import { getContextState } from './contextControls.js';

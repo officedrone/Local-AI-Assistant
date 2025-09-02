@@ -1,4 +1,4 @@
-// contextControls.js
+// src/static/webviewScripts/contextControls.js
 export const contextCheckbox = document.getElementById('contextCheckbox');
 
 export function getContextState() {

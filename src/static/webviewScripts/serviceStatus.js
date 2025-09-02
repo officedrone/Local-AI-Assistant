@@ -1,4 +1,4 @@
-// serviceStatus.js
+// /src/static/webviewScripts/serviceStatus.js
 export function updateServiceStatus(status) {
   const indicator = document.getElementById('api-status');
   const urlSpan = document.getElementById('llmURLBox');
@@ -20,19 +20,19 @@ export function updateServiceStatus(status) {
   const normalizedIds = modelIds.map(id => id.toLowerCase());
 
   if (!currentUrl || currentUrl.toLowerCase() === 'none') {
-    indicator.textContent = '🔌 No URL';
+    indicator.textContent = '🔌 Enter Service URL';
     indicator.style.color = softRed;
     urlSpan.style.color = softRed;
     apiTypeSpan.style.color = softRed;
     modelSpan.style.color = softRed;
   } else if (!status.serviceUp) {
-    indicator.textContent = '🔌 Offline';
+    indicator.textContent = '🔌 Service Offline';
     indicator.style.color = softRed;
     urlSpan.style.color = softRed;
     apiTypeSpan.style.color = softRed;
     modelSpan.style.color = softRed;
   } else if (!status.hasModels) {
-    indicator.textContent = '🚦 No models';
+    indicator.textContent = '🚦 No models found for API type';
     indicator.style.color = softOrange;
     urlSpan.style.color = softGreen;
     apiTypeSpan.style.color = softOrange;
@@ -45,7 +45,7 @@ export function updateServiceStatus(status) {
       indicator.style.color = softGreen;
       modelSpan.style.color = softGreen;
     } else {
-      indicator.textContent = '❌ Wrong model';
+      indicator.textContent = '❌ Model mismatch';
       indicator.style.color = softOrange;
       modelSpan.style.color = softOrange;
       urlSpan.style.color = softGreen; // URL stays green for reachable service

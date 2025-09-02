@@ -1,11 +1,10 @@
-// src/commands/promptBuilder.ts
-
 import * as vscode from 'vscode';
 import {
   validationPrompt,
   completionPrompt,
   userValidationMessage,
-  userCompletionMessage
+  userCompletionMessage,
+  chatPrompt
 } from '../static/prompts';
 
 export type PromptMode = 'validate' | 'complete' | 'chat';
@@ -30,6 +29,15 @@ export async function getLanguage(): Promise<string> {
 }
 
 /**
+ * Get the configured context size from settings.
+ */
+function getContextSize(): number {
+  return vscode.workspace
+    .getConfiguration('localAIAssistant')
+    .get<number>('context.contextSize', 4096);
+}
+
+/**
  * Build messages for OpenAI's chat endpoint.
  */
 export function buildOpenAIMessages({
@@ -38,28 +46,23 @@ export function buildOpenAIMessages({
   fileContext,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
+  const contextSize = getContextSize();
   let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and as concisely as possible. If providing code blocks, provide only relevant code blocks and not the full file unless the user requests the full file. The language in use is ${language}`;
-
-    if (fileContext) {
-      systemPrompt += `\n\nHere is the current file context:\n${fileContext}`;
-    }
+    systemPrompt = chatPrompt(language, fileContext, contextSize);
   } else if (mode === 'validate') {
-    systemPrompt = validationPrompt(code, fileContext, language);
+    systemPrompt = validationPrompt(code, fileContext, language, contextSize);
   } else {
-    systemPrompt = completionPrompt(code, fileContext, language);
+    systemPrompt = completionPrompt(code, fileContext, language, contextSize);
   }
 
-  let userPrompt: string;
-  if (mode === 'chat') {
-    userPrompt = code.trim();
-  } else if (mode === 'validate') {
-    userPrompt = userValidationMessage(code, language);
-  } else {
-    userPrompt = userCompletionMessage(code, language);
-  }
+  const userPrompt =
+    mode === 'chat'
+      ? code.trim()
+      : mode === 'validate'
+      ? userValidationMessage(code, language)
+      : userCompletionMessage(code, language);
 
   return [
     { role: 'system', content: systemPrompt.trim() },
@@ -69,7 +72,6 @@ export function buildOpenAIMessages({
 
 /**
  * Build messages for Ollama's chat endpoint.
- * Modified to include file context if provided.
  */
 export function buildOllamaMessages({
   code,
@@ -77,28 +79,23 @@ export function buildOllamaMessages({
   fileContext,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
+  const contextSize = getContextSize();
   let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = `You are a helpful AI assistant that answers developer questions clearly and as concisely as possible. If providing code blocks, provide only relevant code blocks and not the full file unless the user requests the full file. The language in use is ${language}`;
-
-    if (fileContext) {
-      systemPrompt += `\n\nHere is the current file context:\n${fileContext}`;
-    }
+    systemPrompt = chatPrompt(language, fileContext);
   } else if (mode === 'validate') {
-    systemPrompt = validationPrompt(code, undefined, language);
+    systemPrompt = validationPrompt(code, undefined, language, contextSize);
   } else {
-    systemPrompt = completionPrompt(code, undefined, language);
+    systemPrompt = completionPrompt(code, undefined, language, contextSize);
   }
 
-  let userPrompt: string;
-  if (mode === 'chat') {
-    userPrompt = code.trim();
-  } else if (mode === 'validate') {
-    userPrompt = userValidationMessage(code, language);
-  } else {
-    userPrompt = userCompletionMessage(code, language);
-  }
+  const userPrompt =
+    mode === 'chat'
+      ? code.trim()
+      : mode === 'validate'
+      ? userValidationMessage(code, language)
+      : userCompletionMessage(code, language);
 
   return [
     { role: 'system', content: systemPrompt.trim() },

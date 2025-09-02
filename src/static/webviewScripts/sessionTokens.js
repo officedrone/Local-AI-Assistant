@@ -1,4 +1,4 @@
-// sessionTokens.js
+// /src/static/webviewScripts/sessionTokens.js
 export function updateTokenPanel({ sessionTokens, fileContextTokens, totalTokens }, contextSize) {
   const sessionTokenSpan = document.getElementById('sessionTokenCount');
   const fileTokenSpan = document.getElementById('fileTokenCount');

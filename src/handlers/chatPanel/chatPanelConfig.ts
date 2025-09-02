@@ -1,3 +1,4 @@
+// src/handlers/chatPanel/chatPanelConfig.ts
 import * as vscode from 'vscode';
 
 const CONFIG_SECTION = 'localAIAssistant';

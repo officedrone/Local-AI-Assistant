@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.0.15 – Modularization, initial support for reasoning models
+
+- UPDATE: massive redesign of chatPanel / chatPanelView components. Broke them up into sub-modules to facilitate ease of feature enablement in future.
+- ADD: initial support for reasoning models. Limited reasoning to 1/5 of configured context tokens (will implement separate variables for this in upcoming version)
+- UPDATE: Update internal folder structure to keep it in line with future modularization efforts.
+- UPDATE: Styling and usability fixes
+
 ## 0.0.14 – API Type + Context Size UI elements
 
 - ADD: visual service healtcheck and relevant handlers

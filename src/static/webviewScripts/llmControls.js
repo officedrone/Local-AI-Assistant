@@ -1,4 +1,4 @@
-// llmControls.js
+// src/static/webviewScripts/llmControls.js
 export function setupLLMControls(vscode) {
   document.getElementById('modelNameBox')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectModel' });

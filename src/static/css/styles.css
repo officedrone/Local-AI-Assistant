@@ -530,3 +530,23 @@ button:active {
   white-space: nowrap;              
 }
 
+/* Limit height and auto-scroll the thinking bubble's content */
+.message.ai-message.thinking .markdown-body {
+  display: flex;
+  flex-direction: column;
+  max-height: 12em; /* or whatever height you want */
+}
+
+.message.ai-message.thinking .thinking-header {
+  flex: 0 0 auto; /* fixed height */
+  font-weight: bold;
+  padding: 0.25rem;
+}
+
+.message.ai-message.thinking .thinking-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
+
