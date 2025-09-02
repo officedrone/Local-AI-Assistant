@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.0.16 – Modularization, initial support for reasoning models
+
+- FIX - Fix files inclusion in package.json to correctly bundle new file structure in extension
+
 ## 0.0.15 – Modularization, initial support for reasoning models
 
 - UPDATE: massive redesign of chatPanel / chatPanelView components. Broke them up into sub-modules to facilitate ease of feature enablement in future.
