@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.0.17 – Modularization, initial support for reasoning models
+
+- FIX - Re-include dependencies (good ol case of 'worked on my machine')
+
 ## 0.0.16 – Modularization, initial support for reasoning models
 
 - FIX - Fix files inclusion in package.json to correctly bundle new file structure in extension

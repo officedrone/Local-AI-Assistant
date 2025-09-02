@@ -4,7 +4,7 @@
   "description": "A VS Code extension that interacts with a LLM API endpoint on your network",
   "publisher": "officedrone",
   "icon": "media/icon.png",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "repository": {
     "type": "git",
     "url": "https://github.com/officedrone/local-ai-assistant"
@@ -27,16 +27,6 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
-    "files": [
-    "out/",
-    "src/static/css/",
-    "src/static/webviewScripts/",
-    "src/handlers/chatPanel/",
-    "media/",
-    "package.json",
-    "README.md",
-    "LICENSE.md"
-  ],
   "contributes": {
     "commands": [
       {
