@@ -1,7 +1,9 @@
 // src/commands/tokenActions.ts
 import encodingForModel from 'gpt-tokenizer';
 import * as vscode from 'vscode';
-import { getActiveChatPanel, postSessionTokenUpdate } from '../commands/chatPanel';
+import { getActiveChatPanel } from '../handlers/chatPanel/chatPanel';
+import { postSessionTokenUpdate } from '../handlers/chatPanel/chatPanelTokens';
+
 
 const CONFIG_SECTION = 'localAIAssistant';
 

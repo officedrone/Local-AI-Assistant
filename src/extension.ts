@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { registerChatPanelCommand } from './commands/chatPanel';
+import { registerChatPanelCommand } from './handlers/chatPanel/chatPanel';
 import { setupIdleTooltip } from './commands/idleTooltip';
 import { registerCodeActions } from './commands/codeActions';
 import { fetchAvailableModels } from './api/apiRouter';

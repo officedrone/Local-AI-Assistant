@@ -6,7 +6,8 @@ import {
   getLanguage,
   PromptContext
 } from './promptBuilder';
-import { getOrCreateChatPanel } from './chatPanel';
+import { getOrCreateChatPanel } from '../handlers/chatPanel/chatPanel';
+
 import { routeChatRequest } from '../api/apiRouter';
 import encodingForModel from 'gpt-tokenizer';
 import {

@@ -1,4 +1,4 @@
-// contextHandler.ts
+//src/handlers/contextHandler.ts
 import * as vscode from 'vscode';
 import { getFileContextTokens } from '../commands/tokenActions';
 
