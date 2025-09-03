@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.0.19 – Modularization, initial support for reasoning models
+
+- UPDATE: Usability/Styling enhancements
+- UPDATE: Additional Health Service banner changes
+
 ## 0.0.18 – Modularization, initial support for reasoning models
 
 - UPDATE: Svc healthcheck logic to avoid spam banners if LLM service is down; protection against disposed webviews
