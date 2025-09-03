@@ -47,7 +47,7 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
           controller.abort();
         }
         // Tell the webview to replace the placeholder with "Message Aborted by User" if no chunks yet
-        panel.webview.postMessage({ type: 'earlyEnd', reason: 'Message Aborted by User' });
+        panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
         break;
 
       case 'openSettings':

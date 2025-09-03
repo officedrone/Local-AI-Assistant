@@ -91,7 +91,7 @@ export async function sendToOllama({ model, messages, signal }: ChatRequestOptio
     const json = await res.json() as ChatResponse;
     return json.message?.content ?? 'No response';
   } catch (err) {
-    vscode.window.showErrorMessage(`🛑 Ollama request failed: ${err}`);
+    //vscode.window.showErrorMessage(`🛑 Ollama request failed: ${err}`);
     console.error('Ollama proxy error:', err);
     return `Error: ${err}`;
   }

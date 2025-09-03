@@ -147,7 +147,6 @@ message:hover {
   background: linear-gradient(to left, var(--code-bg), var(--assistant-bg));
 }
 
-.ai-message.aborted .markdown-body { color: #d66; font-style: italic; }
 
 .thinking {
   opacity: 0.85;
@@ -186,6 +185,26 @@ message:hover {
   padding: 0.25rem;
 }
 
+/* ─── EARLY END / STATUS BUBBLES ─────────────────────────── */
+.ai-message.status-aborted {
+  background: linear-gradient(to left, #fef6f6, #f9eaea);
+  border-left: 4px solid #d9534f; /* soft red accent */
+  color: var(--assistant-text);
+}
+
+.ai-message.status-error {
+  background: linear-gradient(to left, #fff8f0, #fdf1e6);
+  border-left: 4px solid #f0ad4e; /* amber accent */
+  color: var(--assistant-text);
+}
+
+.ai-message .status-reason {
+  display: block;
+  font-size: 0.9rem;
+  font-style: italic;
+  opacity: 0.85;
+  margin-top: 4px;
+}
 
 
 
