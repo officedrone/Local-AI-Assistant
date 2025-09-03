@@ -224,7 +224,7 @@ export async function fetchOllamaTags(): Promise<string[]> {
       ? data.models.map((m) => m.name).filter(Boolean)
       : [];
   } catch (err) {
-    vscode.window.showErrorMessage(`🛑 Failed to fetch Ollama model list: ${err}`);
+    //vscode.window.showErrorMessage(`🛑 Failed to fetch Ollama model list: ${err}`);
     console.error('Ollama model list error:', err);
     return [];
   }

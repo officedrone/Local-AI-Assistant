@@ -58,7 +58,7 @@ export async function fetchOpenAiModels(): Promise<string[]> {
     const data = await res.json() as { data?: { id: string }[] };
     return data.data?.map((m) => m.id).filter(Boolean) ?? [];
   } catch (err) {
-    vscode.window.showErrorMessage(`🛑 Failed to fetch OpenAI model list: ${err}`);
+    //vscode.window.showErrorMessage(`🛑 Failed to fetch OpenAI model list: ${err}`);
     console.error('OpenAI model list error:', err);
     return [];
   }

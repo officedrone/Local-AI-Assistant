@@ -1,11 +1,24 @@
 // src/api/apiRouter.ts
-
 import * as vscode from 'vscode';
 import { sendToOpenAI, fetchOpenAiModels } from './openaiProxy';
 import { sendToOllama, fetchOllamaTags } from './ollamaProxy';
 import { handleStreamingResponse } from './streamingHandler';
 
 let healthInterval: NodeJS.Timeout | null = null;
+let lastServiceUp: boolean | null = null;
+
+// Track disposal state for the current panel
+let panelDisposed = false;
+
+function safePost(panel: vscode.WebviewPanel | undefined, msg: any) {
+  if (panel && !panelDisposed) {
+    try {
+      panel.webview.postMessage(msg);
+    } catch (err) {
+      console.warn('[apiRouter] postMessage failed (panel disposed?)', err);
+    }
+  }
+}
 
 export interface ChatRequestOptions {
   model?: string;
@@ -30,6 +43,15 @@ export async function routeChatRequest({
   const apiType = apiTypeRaw.toLowerCase();
   const trimmedModel = model?.trim() ?? '';
 
+  if (panel) {
+    // Track disposal for this panel
+    panelDisposed = false;
+    panel.onDidDispose(() => {
+      panelDisposed = true;
+      stopHealthLoop();
+    });
+  }
+
   // streaming path
   if (panel) {
     try {
@@ -45,7 +67,7 @@ export async function routeChatRequest({
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         console.log('[apiRouter] stream aborted');
-        panel.webview.postMessage({ type: 'stoppedStream', message: '' });
+        safePost(panel, { type: 'stoppedStream', message: '' });
         return;
       }
       throw err;
@@ -76,18 +98,17 @@ export async function routeChatRequest({
     }
 
     if (response.startsWith('Error:')) {
-      await showHealthMessage(apiType);
+      await showHealthMessage(apiType, panel);
     }
 
     return response;
   } catch (err) {
     console.error('Chat routing error:', err);
-    await showHealthMessage(apiType);
+    await showHealthMessage(apiType, panel);
     return `Error: ${err}`;
   }
 }
 
-//Get models
 export async function fetchAvailableModels(): Promise<string[]> {
   const cfg = vscode.workspace.getConfiguration('localAIAssistant.apiLLM.config');
   const apiTypeRaw = cfg.get<string>('apiType', 'OpenAI');
@@ -105,26 +126,33 @@ export async function fetchAvailableModels(): Promise<string[]> {
   }
 }
 
-
-// Start periodic health checks (every 10s) while svc up
 export function startHealthLoop(panel: vscode.WebviewPanel) {
   if (healthInterval) return; // already running
 
   healthInterval = setInterval(async () => {
+    if (panelDisposed) {
+      stopHealthLoop();
+      return;
+    }
+
     const health = await checkServiceHealth();
 
-    // Send status to webview
-    panel.webview.postMessage({ type: 'apiReachability', value: health });
+    // Always update the webview
+    safePost(panel, { type: 'apiReachability', value: health });
 
-    // Stop the loop if service is down OR has no models
+    if (lastServiceUp !== null && lastServiceUp && !health.serviceUp) {
+      vscode.window.showErrorMessage(
+        '🔌 LLM service may be offline or misconfigured. Check your endpoint and authentication.'
+      );
+    }
+    lastServiceUp = health.serviceUp;
+
     if (!health.serviceUp || !health.hasModels) {
       stopHealthLoop();
     }
   }, 10_000);
 }
 
-
-// Stop the loop
 export function stopHealthLoop() {
   if (healthInterval) {
     clearInterval(healthInterval);
@@ -132,7 +160,6 @@ export function stopHealthLoop() {
   }
 }
 
-//Used for the timeout override
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const id = setTimeout(() => reject(new Error('Timeout')), ms);
@@ -185,35 +212,40 @@ export async function checkServiceHealth(): Promise<{
   return { serviceUp, hasModels, apiType, models: modelsList };
 }
 
-async function showHealthMessage(apiTypeFromRoute?: string) {
-  // Reuse the unified health check
-  const { serviceUp, hasModels, apiType } = await checkServiceHealth();
+async function showHealthMessage(apiTypeFromRoute?: string, panel?: vscode.WebviewPanel) {
+  const health = await checkServiceHealth();
 
-  let message: string;
-  if (!serviceUp) {
-    message =
-      '🔌 LLM service may be offline or misconfigured. Check your endpoint and authentication.';
-  } else if (!hasModels) {
-    if (apiType === 'ollama') {
+  safePost(panel, { type: 'apiReachability', value: health });
+
+  if (lastServiceUp !== null && lastServiceUp && !health.serviceUp) {
+    let message: string;
+    if (!health.serviceUp) {
       message =
-        '🚦 Ollama is reachable but returned no tags. Ensure your models are loaded with `ollama pull <model>`.';
+        '🔌 LLM service may be offline or misconfigured. Check your endpoint and authentication.';
+    } else if (!health.hasModels) {
+      if (health.apiType === 'ollama') {
+        message =
+          '🚦 Ollama is reachable but returned no tags. Ensure your models are loaded with `ollama pull <model>`.';
+      } else {
+        message =
+          '🚦 OpenAI‑compatible service is reachable but returned no models from /v1/models. ' +
+          'Verify that the service has models deployed. Press CTRL+ALT+SHIFT+M (CMD+ALT+SHIFT+M for Mac) to select a model and load it if your environment supports JIT.';
+      }
     } else {
-      message =
-        '🚦 OpenAI‑compatible service is reachable but returned no models from /v1/models. ' +
-        'Verify that the service has models deployed. Press CTRL+ALT+SHIFT+M (CMD+ALT+SHIFT+M for Mac) to select a model and load it if your environment supports JIT.';
+      message = '✅ Service is healthy but request failed. See console for details.';
     }
-  } else {
-    message = '✅ Service is healthy but request failed. See console for details.';
+
+    vscode.window
+      .showErrorMessage(message, 'Open Settings')
+      .then((sel) => {
+        if (sel === 'Open Settings') {
+          vscode.commands.executeCommand(
+            'workbench.action.openSettings',
+            '@ext:officedrone.local-ai-assistant'
+          );
+        }
+      });
   }
 
-  vscode.window
-    .showErrorMessage(message, 'Open Settings')
-    .then((sel) => {
-      if (sel === 'Open Settings') {
-        vscode.commands.executeCommand(
-          'workbench.action.openSettings',
-          '@ext:officedrone.local-ai-assistant'
-        );
-      }
-    });
+  lastServiceUp = health.serviceUp;
 }

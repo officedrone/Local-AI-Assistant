@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.0.18 – Modularization, initial support for reasoning models
+
+- UPDATE: Svc healthcheck logic to avoid spam banners if LLM service is down; protection against disposed webviews
+- UPDATE: Ehnancements to thinking bubbles/logic. Should now cover most reasoning scenarios
+- ADD - Introduce support for ByteDance Seed thinking logic
+- UPDATE - light styling changes to chat bubbles. Style revamp planned for upcoming version.
+
 ## 0.0.17 – Modularization, initial support for reasoning models
 
 - FIX - Re-include dependencies (good ol case of 'worked on my machine')

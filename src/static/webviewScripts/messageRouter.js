@@ -11,9 +11,10 @@ import {
 } from './scrollUtils.js';
 import { renderMd, injectLinks } from './markdownUtils.js';
 
-// Track thinking state
+// Track thinking state and chunk receipt
 let inThinkingBlock = false;
 let thinkingBuffer = '';
+let hasReceivedChunk = false;
 
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
@@ -21,7 +22,9 @@ export function setupMessageRouter(vscode, contextSize) {
 
     switch (type) {
       case 'startStream': {
-        const bubble = appendBubble('…', 'ai-message thinking');
+        hasReceivedChunk = false;
+        // Start with a neutral bubble — no thinking class yet
+        const bubble = appendBubble('…', 'ai-message');
         setStreamingState({ isStreaming: true, assistantElem: bubble, assistantRaw: '' });
 
         setUserInitiatedScroll(false);
@@ -33,76 +36,118 @@ export function setupMessageRouter(vscode, contextSize) {
       }
 
       case 'streamChunk': {
+        hasReceivedChunk = true;
         const state = getStreamingState();
-
         let chunk = message || '';
 
-        // Detect start of <think>
-        if (chunk.includes('<think>')) {
+        // Detect start of <think> or <seed:think>
+        if (chunk.includes('<think>') || chunk.includes('<seed:think>')) {
           inThinkingBlock = true;
           thinkingBuffer = '';
-          chunk = chunk.replace('<think>', '');
-          // Mark bubble visually as thinking
+          chunk = chunk.replace('<think>', '').replace('<seed:think>', '');
+
+          // Switch bubble to thinking mode only now
           state.assistantElem.classList.add('thinking');
         }
 
-        // Detect end of </think>
-          if (chunk.includes('</think>')) {
-            inThinkingBlock = false;
-            chunk = chunk.replace('</think>', '');
-            thinkingBuffer = '';
+        // Detect end of </think> or </seed:think>
+        if (chunk.includes('</think>') || chunk.includes('</seed:think>')) {
+          inThinkingBlock = false;
+          chunk = chunk.replace('</think>', '').replace('</seed:think>', '');
+          thinkingBuffer = '';
 
-            // Remove thinking style
-            state.assistantElem.classList.remove('thinking');
+          // Remove thinking style
+          state.assistantElem.classList.remove('thinking');
 
-            // Reset assistantRaw so final answer overwrites thinking text
-            setStreamingState({ ...state, assistantRaw: '' });
+          // Reset assistantRaw so final answer overwrites thinking text
+          setStreamingState({ ...state, assistantRaw: '' });
 
-            // Optionally clear the bubble content entirely
-            const body = state.assistantElem.querySelector('.markdown-body');
-            body.innerHTML = '<strong>Assistant:</strong><br/>'; // no dots, ready for real content
-
-            return; // skip normal render this tick
-          }
+          // Clear bubble content entirely, ready for real content
+          const body = state.assistantElem.querySelector('.markdown-body');
+          body.innerHTML = '<strong>Assistant:</strong><br/>';
+          // IMPORTANT: do NOT return here — let any remaining chunk fall through
+        }
 
         if (inThinkingBlock) {
           thinkingBuffer += chunk;
+
           const body = state.assistantElem.querySelector('.markdown-body');
+          let contentEl = body.querySelector('.thinking-content');
 
-          // Separate fixed header from scrollable content
-          body.innerHTML = `
-            <div class="thinking-header">💡 Thinking…</div>
-            <div class="thinking-content">${renderMd(thinkingBuffer)}</div>
-          `;
+          // Create the structure once
+          if (!contentEl) {
+            body.innerHTML = `
+              <div class="thinking-header">💡 Thinking…</div>
+              <div class="thinking-content"></div>
+            `;
+            contentEl = body.querySelector('.thinking-content');
 
-          // Auto-scroll the inner thinking content itself
-          const contentEl = body.querySelector('.thinking-content');
-          if (contentEl) {
+            // Track whether user is at bottom
+            contentEl.dataset.autoScroll = 'true';
+            contentEl.addEventListener('scroll', () => {
+              const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
+              contentEl.dataset.autoScroll = atBottom.toString();
+            });
+          }
+
+          // Update content without replacing the element
+          contentEl.innerHTML = renderMd(thinkingBuffer);
+
+          // Only auto-scroll inner content if user is at bottom
+          if (contentEl.dataset.autoScroll === 'true') {
             contentEl.scrollTop = contentEl.scrollHeight;
           }
 
-          if (shouldAutoScroll) scrollToBottomImmediate(true);
+          // Outer chat scroll still works if user hasn't scrolled up there
+          if (shouldAutoScroll) {
+            scrollToBottomImmediate(true);
+          }
           return;
         }
 
-
-
-        // Normal streaming after thinking block
+        // Normal streaming after thinking block or non-thinking stream
         const nextRaw = (state.assistantRaw || '') + chunk;
         setStreamingState({ ...state, assistantRaw: nextRaw });
 
         const body = state.assistantElem.querySelector('.markdown-body');
-        body.innerHTML =
-          '<strong>Assistant:</strong><br/>' +
-          renderMd(nextRaw);
+        body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
 
         injectLinks(state.assistantElem);
 
-        if (shouldAutoScroll) {
-          scrollToBottomImmediate(true);
-        }
+        if (shouldAutoScroll) scrollToBottomImmediate(true);
         break;
       }
+
+      case 'earlyEnd': {
+        const state = getStreamingState();
+
+        if (state.assistantElem) {
+          const body = state.assistantElem.querySelector('.markdown-body');
+
+          if (!hasReceivedChunk) {
+            // No output at all yet — replace placeholder
+            body.innerHTML = `<strong>Assistant:</strong><br/>${ev.data.reason}`;
+          } else if (inThinkingBlock) {
+            // We were in a thinking block — stop blinking and preserve streamed content
+            state.assistantElem.classList.remove('thinking');
+            inThinkingBlock = false;
+
+            // Render whatever was in the thinking buffer as normal assistant output
+            const rendered = renderMd(thinkingBuffer || '');
+            body.innerHTML = `<strong>Assistant:</strong><br/>${rendered}`;
+
+            // Clear the buffer
+            thinkingBuffer = '';
+          }
+          // else: chunks have arrived outside of thinking — leave them as they are
+        }
+
+        setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
+        document.getElementById('sendButton').textContent = 'Send';
+        break;
+      }
+
+
 
       case 'appendAssistant':
         if (!getStreamingState().isStreaming && message && typeof tokens === 'number') {
@@ -155,7 +200,6 @@ export function setupMessageRouter(vscode, contextSize) {
           modelSpan.onclick = () => {
             vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectModel' });
           };
-          vscode.postMessage({ type: 'refreshApiStatus' });
         }
         break;
       }

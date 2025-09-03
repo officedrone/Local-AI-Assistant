@@ -46,7 +46,8 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         if (controller && !controller.signal.aborted) {
           controller.abort();
         }
-        panel.webview.postMessage({ type: 'stoppedStream', message: '' });
+        // Tell the webview to replace the placeholder with "Message Aborted by User" if no chunks yet
+        panel.webview.postMessage({ type: 'earlyEnd', reason: 'Message Aborted by User' });
         break;
 
       case 'openSettings':
@@ -56,20 +57,19 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         );
         break;
 
-        case 'newSession': {
-          resetSessionTokenCount();
-          conversation = [];
-          lastFileContextTokens = 0;
-          panel.dispose();
-          onDispose();
+      case 'newSession': {
+        resetSessionTokenCount();
+        conversation = [];
+        lastFileContextTokens = 0;
+        panel.dispose();
+        onDispose();
 
-          const newPanel = getOrCreateChatPanel();
-          lastFileContextTokens = getEffectiveFileContextTokens();
-          refreshTokenStats(newPanel);
-          updateApiStatus(newPanel);
-          break;
-        }
-
+        const newPanel = getOrCreateChatPanel();
+        lastFileContextTokens = getEffectiveFileContextTokens();
+        refreshTokenStats(newPanel);
+        updateApiStatus(newPanel);
+        break;
+      }
 
       case 'insertCode':
         await handleInsertCode(evt.message);
@@ -191,6 +191,8 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
     setStreamingActive(panel, false);
   } catch (err) {
     setStreamingActive(panel, false);
+    // Tell the webview to replace the placeholder with "Unknown Error" if no chunks yet
+    panel.webview.postMessage({ type: 'earlyEnd', reason: 'Unknown Error' });
     await updateApiStatus(panel);
     throw err;
   }
