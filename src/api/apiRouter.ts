@@ -44,7 +44,6 @@ export async function routeChatRequest({
   const trimmedModel = model?.trim() ?? '';
 
   if (panel) {
-    // Track disposal for this panel
     panelDisposed = false;
     panel.onDidDispose(() => {
       panelDisposed = true;
@@ -52,7 +51,7 @@ export async function routeChatRequest({
     });
   }
 
-  // streaming path
+  // --- STREAMING PATH ---
   if (panel) {
     try {
       await handleStreamingResponse({
@@ -75,14 +74,13 @@ export async function routeChatRequest({
     return;
   }
 
-  // non-streaming fallback
+  // --- NON-STREAMING FALLBACK ---
   try {
     let response: string;
 
     if (apiType === 'ollama') {
       const ollamaMessages = messages.filter(
-        (m): m is { role: 'system' | 'user'; content: string } =>
-          m.role !== 'assistant'
+        (m): m is { role: 'system' | 'user'; content: string } => m.role !== 'assistant'
       );
       response = await sendToOllama({
         model: trimmedModel,
@@ -105,7 +103,15 @@ export async function routeChatRequest({
   } catch (err) {
     console.error('Chat routing error:', err);
     await showHealthMessage(apiType, panel);
-    return `Error: ${err}`;
+
+    // Final failure — tell the UI
+    safePost(panel, {
+      type: 'earlyEnd',
+      reason: 'LLM service unavailable',
+    });
+
+    // Re-throw so outer handlers can log/handle
+    throw err;
   }
 }
 

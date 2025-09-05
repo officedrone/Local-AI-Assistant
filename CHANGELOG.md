@@ -1,15 +1,20 @@
 # Change Log
 
+## 0.0.20 – Modularization, initial support for reasoning models
+
+- ADD: error handling in bubbles in case user sends message to a dead endpoint
+- ADD: keywords to package.json for marketplace visibility
+
 ## 0.0.19 – Modularization, initial support for reasoning models
 
-- UPDATE: Usability/Styling enhancements
-- UPDATE: Additional Health Service banner changes
+- UPDATE: usability/Styling enhancements
+- UPDATE: additional Health Service banner changes
 
 ## 0.0.18 – Modularization, initial support for reasoning models
 
-- UPDATE: Svc healthcheck logic to avoid spam banners if LLM service is down; protection against disposed webviews
-- UPDATE: Ehnancements to thinking bubbles/logic. Should now cover most reasoning scenarios
-- ADD - Introduce support for ByteDance Seed thinking logic
+- UPDATE: svc healthcheck logic to avoid spam banners if LLM service is down; protection against disposed webviews
+- UPDATE: ehnancements to thinking bubbles/logic. Should now cover most reasoning scenarios
+- ADD: introduce support for ByteDance Seed thinking logic
 - UPDATE - light styling changes to chat bubbles. Style revamp planned for upcoming version.
 
 ## 0.0.17 – Modularization, initial support for reasoning models

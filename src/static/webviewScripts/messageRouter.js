@@ -15,6 +15,7 @@ import { renderMd, injectLinks } from './markdownUtils.js';
 let inThinkingBlock = false;
 let thinkingBuffer = '';
 let hasReceivedChunk = false;
+let noChunkTimer = null;
 
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
@@ -26,6 +27,19 @@ export function setupMessageRouter(vscode, contextSize) {
         // Start with a neutral bubble — no thinking class yet
         const bubble = appendBubble('…', 'ai-message');
         setStreamingState({ isStreaming: true, assistantElem: bubble, assistantRaw: '' });
+        bubble.classList.add('thinking');
+        // Watchdog: if no chunk arrives soon, show interim message
+        if (noChunkTimer) clearTimeout(noChunkTimer);
+        noChunkTimer = setTimeout(() => {
+          if (!hasReceivedChunk) {
+            const state = getStreamingState();
+            if (state.assistantElem) {
+              const body = state.assistantElem.querySelector('.markdown-body');
+              body.innerHTML = `<strong>Assistant:</strong><i><br/><span class="status-reason">&lt LLM is taking longer than expected to reply &gt</span>`;
+              
+            }
+          }
+        }, 5000);
 
         setUserInitiatedScroll(false);
         setAutoScrollEnabled(true);
@@ -37,6 +51,7 @@ export function setupMessageRouter(vscode, contextSize) {
 
       case 'streamChunk': {
         hasReceivedChunk = true;
+        if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
         const state = getStreamingState();
         let chunk = message || '';
 
@@ -119,6 +134,8 @@ export function setupMessageRouter(vscode, contextSize) {
       }
 
       case 'earlyEnd': {
+        if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
+
         const state = getStreamingState();
 
         if (state.assistantElem) {
@@ -156,16 +173,33 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
 
       case 'endStream':
-      case 'stoppedStream':
+      case 'stoppedStream': {
+        if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
+
         const state = getStreamingState();
+
         if (state.assistantElem) {
-          state.assistantElem.classList.remove('thinking'); // remove pulsating style
+          // If nothing was streamed, replace the placeholder with a clear message
+          if (!hasReceivedChunk) {
+            const body = state.assistantElem.querySelector('.markdown-body');
+            body.innerHTML = `<strong>Assistant:</strong><i><br/><span class="status-reason">&lt No response received from LLM. Verify the URL, API, and model are correct. &gt</span>`;
+            if (shouldAutoScroll) {
+              scrollToBottomImmediate(true);
+            }
+          }
+
+          // remove pulsating style
+          state.assistantElem.classList.remove('thinking');
         }
+
         setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
         document.getElementById('sendButton').textContent = 'Send';
         inThinkingBlock = false;
         thinkingBuffer = '';
+        hasReceivedChunk = false; // reset for next turn
         break;
+      }
+
 
       case 'appendUser':
         if (message && typeof tokens === 'number') {
@@ -182,7 +216,7 @@ export function setupMessageRouter(vscode, contextSize) {
         if (state.assistantElem && typeof tokens === 'number') {
           const tdiv = document.createElement('div');
           tdiv.className = 'token-count';
-          tdiv.textContent = '🧮 ' + tokens + ' tokens';
+          tdiv.textContent = tokens + ' tokens';
           state.assistantElem.querySelector('.markdown-body').appendChild(tdiv);
 
           if (shouldAutoScroll) {
