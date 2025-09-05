@@ -216,7 +216,7 @@ export function setupMessageRouter(vscode, contextSize) {
         if (state.assistantElem && typeof tokens === 'number') {
           const tdiv = document.createElement('div');
           tdiv.className = 'token-count';
-          tdiv.textContent = tokens + ' tokens';
+          tdiv.textContent = '🧮 ' + tokens + ' tokens';
           state.assistantElem.querySelector('.markdown-body').appendChild(tdiv);
 
           if (shouldAutoScroll) {
