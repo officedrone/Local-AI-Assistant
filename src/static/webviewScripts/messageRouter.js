@@ -7,7 +7,8 @@ import {
   scrollToBottomImmediate,
   shouldAutoScroll,
   setAutoScrollEnabled,
-  setUserInitiatedScroll
+  setUserInitiatedScroll,
+  scheduleScrollToBottom
 } from './scrollUtils.js';
 import { renderMd, injectLinks } from './markdownUtils.js';
 
@@ -24,22 +25,26 @@ export function setupMessageRouter(vscode, contextSize) {
     switch (type) {
       case 'startStream': {
         hasReceivedChunk = false;
-        // Start with a neutral bubble — no thinking class yet
         const bubble = appendBubble('…', 'ai-message');
         setStreamingState({ isStreaming: true, assistantElem: bubble, assistantRaw: '' });
-        bubble.classList.add('thinking');
-        // Watchdog: if no chunk arrives soon, show interim message
+
+        // Start with visual pulse only
+        bubble.classList.add('pulsing');
+        inThinkingBlock = false;
+        thinkingBuffer = '';
+
+        // Watchdog: if no chunk arrives soon, show interim message + real thinking mode
         if (noChunkTimer) clearTimeout(noChunkTimer);
         noChunkTimer = setTimeout(() => {
           if (!hasReceivedChunk) {
             const state = getStreamingState();
             if (state.assistantElem) {
               const body = state.assistantElem.querySelector('.markdown-body');
-              body.innerHTML = `<strong>Assistant:</strong><i><br/><span class="status-reason">&lt LLM is taking longer than expected to reply &gt</span>`;
-              
+              body.innerHTML = `<strong>Assistant:</strong><i><br/>
+                <span class="status-reason">&lt; LLM is taking longer than expected to reply &gt;</span>`;
             }
           }
-        }, 5000);
+        }, 10000);
 
         setUserInitiatedScroll(false);
         setAutoScrollEnabled(true);
@@ -53,6 +58,7 @@ export function setupMessageRouter(vscode, contextSize) {
         hasReceivedChunk = true;
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
         const state = getStreamingState();
+        state.assistantElem.classList.remove('pulsing');
         let chunk = message || '';
 
         // Detect start of <think> or <seed:think>
@@ -115,7 +121,7 @@ export function setupMessageRouter(vscode, contextSize) {
 
           // Outer chat scroll still works if user hasn't scrolled up there
           if (shouldAutoScroll) {
-            scrollToBottomImmediate(true);
+            scheduleScrollToBottom();
           }
           return;
         }
@@ -129,7 +135,7 @@ export function setupMessageRouter(vscode, contextSize) {
 
         injectLinks(state.assistantElem);
 
-        if (shouldAutoScroll) scrollToBottomImmediate(true);
+        if (shouldAutoScroll) scheduleScrollToBottom();
         break;
       }
 
@@ -145,19 +151,16 @@ export function setupMessageRouter(vscode, contextSize) {
             // No output at all yet — replace placeholder
             body.innerHTML = `<strong>Assistant:</strong><br/>${ev.data.reason}`;
           } else if (inThinkingBlock) {
-            // We were in a thinking block — stop blinking and preserve streamed content
-            state.assistantElem.classList.remove('thinking');
-            inThinkingBlock = false;
-
-            // Render whatever was in the thinking buffer as normal assistant output
             const rendered = renderMd(thinkingBuffer || '');
             body.innerHTML = `<strong>Assistant:</strong><br/>${rendered}`;
-
-            // Clear the buffer
-            thinkingBuffer = '';
           }
-          // else: chunks have arrived outside of thinking — leave them as they are
+          // Always clear thinking style if present
+          state.assistantElem.classList.remove('thinking');
         }
+        // Reset flags/buffer regardless of whether we had an element
+        inThinkingBlock = false;
+        thinkingBuffer = '';
+        hasReceivedChunk = false;
 
         setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
         document.getElementById('sendButton').textContent = 'Send';
@@ -182,7 +185,8 @@ export function setupMessageRouter(vscode, contextSize) {
           // If nothing was streamed, replace the placeholder with a clear message
           if (!hasReceivedChunk) {
             const body = state.assistantElem.querySelector('.markdown-body');
-            body.innerHTML = `<strong>Assistant:</strong><i><br/><span class="status-reason">&lt No response received from LLM. Verify the URL, API, and model are correct. &gt</span>`;
+            body.innerHTML = `<strong>Assistant:</strong><i><br/>
+              <span class="status-reason">&lt; No response received from LLM. Verify the URL, API, and model are correct. &gt;</span>`;
             if (shouldAutoScroll) {
               scrollToBottomImmediate(true);
             }
@@ -192,11 +196,12 @@ export function setupMessageRouter(vscode, contextSize) {
           state.assistantElem.classList.remove('thinking');
         }
 
-        setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
-        document.getElementById('sendButton').textContent = 'Send';
         inThinkingBlock = false;
         thinkingBuffer = '';
-        hasReceivedChunk = false; // reset for next turn
+        hasReceivedChunk = false;
+
+        setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
+        document.getElementById('sendButton').textContent = 'Send';
         break;
       }
 

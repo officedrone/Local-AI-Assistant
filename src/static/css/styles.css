@@ -160,6 +160,18 @@ message:hover {
     var(--code-bg) 20px
   );
 }
+.pulsing {
+  opacity: 0.85;
+  font-style: italic;
+  animation: pulse 1.5s infinite ease-in-out;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--assistant-bg),
+    var(--assistant-bg) 10px,
+    var(--code-bg) 10px,
+    var(--code-bg) 20px
+  );
+}
 
 @keyframes pulse {
   0%, 100% { opacity: 0.6; }
@@ -170,7 +182,7 @@ message:hover {
 .message.ai-message.thinking .markdown-body {
   display: flex;
   flex-direction: column;
-  max-height: 12em; /* or whatever height you want */
+  max-height: 12em; 
 }
 
 .message.ai-message.thinking .thinking-header {

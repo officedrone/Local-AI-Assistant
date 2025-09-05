@@ -107,7 +107,20 @@ export async function handleStreamingResponse({
           streamErr
         );
 
+        //Bail out if Stop was pressed before fallback starts
+        if (!isStreamingActive(panel) || signal?.aborted) {
+          panel.webview.postMessage({ type: 'stoppedStream', message: '' });
+          return;
+        }
+
         const response = await sendToOpenAI({ model, messages, signal });
+
+        //Bail out if Stop was pressed during fallback request
+        if (!isStreamingActive(panel) || signal?.aborted) {
+          panel.webview.postMessage({ type: 'stoppedStream', message: '' });
+          return;
+        }
+
         if (response.startsWith('Error:')) {
           panel.webview.postMessage({ type: 'endStream', message: '' });
           return;

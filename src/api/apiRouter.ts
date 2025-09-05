@@ -76,6 +76,12 @@ export async function routeChatRequest({
 
   // --- NON-STREAMING FALLBACK ---
   try {
+    //Bail out if Stop was pressed before starting
+    if (signal?.aborted) {
+      safePost(panel, { type: 'stoppedStream', message: '' });
+      return;
+    }
+
     let response: string;
 
     if (apiType === 'ollama') {
@@ -93,6 +99,12 @@ export async function routeChatRequest({
         messages,
         signal,
       });
+    }
+
+    //Bail out if Stop was pressed during request
+    if (signal?.aborted) {
+      safePost(panel, { type: 'stoppedStream', message: '' });
+      return;
     }
 
     if (response.startsWith('Error:')) {
