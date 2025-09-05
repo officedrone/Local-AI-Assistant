@@ -4,6 +4,9 @@
 
 - ADD: error handling in bubbles in case user sends message to a dead endpoint
 - ADD: keywords to package.json for marketplace visibility
+- FIX: user pressing 'stop' stopping the stream in the UI not always stopping LLM stream from the server in certain cases
+- FIX: some thinking/reasoning bubbles styles not being removed
+- UPDATE: took a first stab at smoothing out scrolling in fast LLM response cases
 
 ## 0.0.19 – Modularization, initial support for reasoning models
 
