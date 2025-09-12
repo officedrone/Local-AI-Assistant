@@ -77,8 +77,9 @@ export function setupMessageRouter(vscode, contextSize) {
           chunk = chunk.replace('</think>', '').replace('</seed:think>', '');
           thinkingBuffer = '';
 
-          // Remove thinking style
+          // Remove thinking or pulsing style
           state.assistantElem.classList.remove('thinking');
+          state.assistantElem.classList.remove('pulsing');
 
           // Reset assistantRaw so final answer overwrites thinking text
           setStreamingState({ ...state, assistantRaw: '' });
@@ -192,8 +193,9 @@ export function setupMessageRouter(vscode, contextSize) {
             }
           }
 
-          // remove pulsating style
+          // Remove thinking or pulsing style
           state.assistantElem.classList.remove('thinking');
+          state.assistantElem.classList.remove('pulsing');
         }
 
         inThinkingBlock = false;
@@ -298,6 +300,29 @@ export function setupMessageRouter(vscode, contextSize) {
       case 'codeInput':
         scrollToBottomImmediate(true);
         break;
+
+      case 'stopStream': {
+        if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
+
+        // Reset any streaming state
+        inThinkingBlock = false;
+        thinkingBuffer = '';
+        hasReceivedChunk = false;
+
+        // If there’s an active assistant bubble, remove thinking/pulsing styles
+        const state = getStreamingState();
+        if (state.assistantElem) {
+          state.assistantElem.classList.remove('thinking', 'pulsing');
+        }
+
+        // Mark streaming as stopped
+        setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
+
+        // Reset send button text
+        document.getElementById('sendButton').textContent = 'Send';
+        break;
+      }
+
 
       default:
         console.warn('Unknown message type:', type);

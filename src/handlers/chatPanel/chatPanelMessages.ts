@@ -15,7 +15,7 @@ import {
 } from '../../commands/tokenActions';
 import { shouldIncludeContext, markContextDirty } from '../contextHandler';
 import { buildOpenAIMessages, buildOllamaMessages, PromptContext, getLanguage } from '../../commands/promptBuilder';
-import { routeChatRequest } from '../../api/apiRouter';
+import { routeChatRequest, stopHealthLoop, startHealthLoop } from '../../api/apiRouter';
 import { getOrCreateChatPanel } from './chatPanelLifecycle';
 
 const CONFIG_SECTION = 'localAIAssistant';
@@ -37,6 +37,7 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         break;
 
       case 'sendToAI':
+        stopHealthLoop(); // pause health checks while streaming
         await handleSendToAI(panel, evt.message);
         break;
 
@@ -48,6 +49,7 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         }
         // Tell the webview to replace the placeholder with "Message Aborted by User" if no chunks yet
         panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
+        startHealthLoop(panel); // resume health checks
         break;
 
       case 'openSettings':
@@ -58,6 +60,15 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         break;
 
       case 'newSession': {
+        // Stop any active generation
+        setStreamingActive(panel, false);
+        const controller = abortControllers.get(panel);
+        if (controller && !controller.signal.aborted) {
+          controller.abort();
+        }
+        // Tell the webview to clean up its UI
+        panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
+
         resetSessionTokenCount();
         conversation = [];
         lastFileContextTokens = 0;
@@ -119,6 +130,9 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
   }
 
   setStreamingActive(panel, true);
+
+  // Pause health checks while streaming
+  stopHealthLoop();
 
   const promptContext: PromptContext = {
     code: userMessage,
@@ -185,7 +199,10 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
         addToSessionTokenCount(chunkTokens, 0);
         refreshTokenStats(panel);
       },
-      onDone: () => {}
+      onDone: () => {
+        // Normal completion — restart health checks
+        startHealthLoop(panel);
+      }
     });
 
     setStreamingActive(panel, false);

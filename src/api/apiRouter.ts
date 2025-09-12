@@ -10,6 +10,9 @@ let lastServiceUp: boolean | null = null;
 // Track disposal state for the current panel
 let panelDisposed = false;
 
+// Store the active panel so stopHealthLoop() can post without needing a param
+let currentPanel: vscode.WebviewPanel | undefined;
+
 function safePost(panel: vscode.WebviewPanel | undefined, msg: any) {
   if (panel && !panelDisposed) {
     try {
@@ -145,6 +148,7 @@ export async function fetchAvailableModels(): Promise<string[]> {
 }
 
 export function startHealthLoop(panel: vscode.WebviewPanel) {
+  currentPanel = panel; // remember the panel
   if (healthInterval) return; // already running
 
   healthInterval = setInterval(async () => {

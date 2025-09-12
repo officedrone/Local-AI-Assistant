@@ -24,6 +24,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // New session button
   document.getElementById('newSessionButton')?.addEventListener('click', () => {
+    // First, tell the webview to stop any active stream
+    vscode.postMessage({ type: 'stopStream' });
+
+    // Then, start a new session
     vscode.postMessage({ type: 'newSession' });
   });
 

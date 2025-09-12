@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.0.21 – Modularization, initial support for reasoning models
+
+- FIX: New session now sends signal to back end to stop generation
+- FIX: LLM bubble pulsating now stops pulsating on time-out
+- UPDATE: Stop svc health check while stream is active (streaming state implies service is up). Resume once streaming ends, or if timeout is encountered.
+
 ## 0.0.20 – Modularization, initial support for reasoning models
 
 - ADD: error handling in bubbles in case user sends message to a dead endpoint
