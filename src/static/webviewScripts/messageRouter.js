@@ -323,6 +323,18 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
       }
 
+      //sendToAI loopback
+      case 'sendToAI': {
+        vscode.postMessage({
+          type: 'sendToAI',
+          message: ev.data.message,
+          mode: ev.data.mode,
+          fileContext: ev.data.fileContext,
+          language: ev.data.language
+        });
+        break;
+      }
+
 
       default:
         console.warn('Unknown message type:', type);

@@ -19,7 +19,8 @@ import { routeChatRequest, stopHealthLoop, startHealthLoop } from '../../api/api
 import { getOrCreateChatPanel } from './chatPanelLifecycle';
 
 const CONFIG_SECTION = 'localAIAssistant';
-const abortControllers = new WeakMap<vscode.WebviewPanel, AbortController>();
+export const abortControllers = new WeakMap<vscode.WebviewPanel, AbortController>();
+
 
 let conversation: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
 let lastFileContextTokens = 0;
@@ -36,10 +37,19 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         }
         break;
 
-      case 'sendToAI':
+      case 'sendToAI': {
         stopHealthLoop(); // pause health checks while streaming
-        await handleSendToAI(panel, evt.message);
+        await handleSendToAI(
+          panel,
+          evt.message,
+          evt.mode,  
+          evt.fileContext,
+          evt.language
+        );
         break;
+      }
+
+
 
       case 'stopGeneration':
         setStreamingActive(panel, false);
@@ -82,6 +92,25 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         break;
       }
 
+      case 'stopStream': {
+        // turn off streaming flag
+        setStreamingActive(panel, false);
+
+        // abort the in-flight request
+        const controller = abortControllers.get(panel);
+        if (controller && !controller.signal.aborted) {
+          controller.abort();
+        }
+
+        // trigger UI cleanup in the webview (no “no response” placeholder)
+        panel.webview.postMessage({ type: 'stopStream' });
+
+        // resume health checks
+        startHealthLoop(panel);
+        break;
+      }
+
+
       case 'insertCode':
         await handleInsertCode(evt.message);
         break;
@@ -107,7 +136,13 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
   });
 }
 
-async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
+async function handleSendToAI(
+  panel: vscode.WebviewPanel,
+  rawMessage: string,
+  mode: 'chat' | 'validate' | 'complete' = 'chat',
+  fileContextOverride?: string,
+  languageOverride?: string
+) {
   const userMessage = rawMessage?.trim();
   if (!userMessage) return;
 
@@ -120,34 +155,35 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
   const text = ed?.document.getText() ?? '';
 
   const includeFileThisTurn = includeCtx && shouldIncludeContext(text, isFirstTurn);
-  const fileContext = includeFileThisTurn ? text : undefined;
+  const fileContext = fileContextOverride ?? (includeFileThisTurn ? text : undefined);
 
-  let language: string | undefined;
-  try {
-    language = await getLanguage();
-  } catch {
-    // leave undefined
+  let language: string | undefined = languageOverride;
+  if (!language) {
+    try {
+      language = await getLanguage();
+    } catch {}
   }
 
   setStreamingActive(panel, true);
-
-  // Pause health checks while streaming
   stopHealthLoop();
 
+  // 1) Build the two-part prompt (system + user) for this mode
   const promptContext: PromptContext = {
     code: userMessage,
-    mode: 'chat',
+    mode,
     fileContext,
     language
   };
-  const built =
-    apiType === 'ollama'
-      ? buildOllamaMessages(promptContext)
-      : buildOpenAIMessages(promptContext);
+  const built = apiType === 'ollama'
+    ? buildOllamaMessages(promptContext)
+    : buildOpenAIMessages(promptContext);
 
+  // Destructure system & user messages
   const newSystem = built[0];
-  const beforeTokens = countMessageTokens(conversation);
+  const newUser   = built[1];
 
+  // 2) Insert or update the system message in the conversation
+  const beforeTokens = countMessageTokens(conversation);
   if (isFirstTurn) {
     conversation.push(newSystem);
   } else if (conversation[0]?.role !== 'system') {
@@ -156,19 +192,20 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
     conversation[0] = newSystem;
   }
 
-  conversation.push({ role: 'user', content: userMessage });
+  // 3) Push the *built* user prompt (with markdown fences!)  
+  conversation.push({ role: 'user', content: newUser.content });
 
+  // 4) Recount tokens to figure out just the user-turn delta
   const afterTokens = countMessageTokens(conversation);
   let userTurnTokens = Math.max(0, afterTokens - beforeTokens);
-
   if (isFirstTurn && includeFileThisTurn) {
     const ctxTokens = getFileContextTokens();
     userTurnTokens = Math.max(0, userTurnTokens - ctxTokens);
   }
-
   const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
   addToSessionTokenCount(userTurnTokens, fileTokenCount);
 
+  // Check total context size
   const total = countMessageTokens(conversation);
   const contextSize = getMaxContextTokens();
   if (total > contextSize) {
@@ -177,23 +214,24 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
     );
   }
 
+  // 5) Append built user prompt as single markdown-rendered bubble
   panel.webview.postMessage({
     type: 'appendUser',
-    message: userMessage,
+    message: newUser.content,
     tokens: userTurnTokens
   });
   refreshTokenStats(panel);
 
+  // 6) Start the stream
   const controller = new AbortController();
   abortControllers.set(panel, controller);
-
   try {
     await routeChatRequest({
       model,
       messages: conversation,
       signal: controller.signal,
       panel,
-      onToken: (chunk: string) => {
+      onToken: (chunk) => {
         if (!isStreamingActive(panel)) return;
         const chunkTokens = countTextTokens(chunk);
         addToSessionTokenCount(chunkTokens, 0);
@@ -204,7 +242,6 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
         startHealthLoop(panel);
       }
     });
-
     setStreamingActive(panel, false);
   } catch (err) {
     setStreamingActive(panel, false);
@@ -214,6 +251,8 @@ async function handleSendToAI(panel: vscode.WebviewPanel, rawMessage: string) {
     throw err;
   }
 }
+
+
 
 async function handleInsertCode(message: string) {
   if (!message) return;

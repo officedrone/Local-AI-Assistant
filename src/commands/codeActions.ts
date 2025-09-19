@@ -8,7 +8,6 @@ import {
 } from './promptBuilder';
 import { getOrCreateChatPanel } from '../handlers/chatPanel/chatPanel';
 
-import { routeChatRequest } from '../api/apiRouter';
 import encodingForModel from 'gpt-tokenizer';
 import {
   countMessageTokens,
@@ -81,11 +80,7 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
         addToSessionTokenCount(promptTokenCount, fileTokenCount);
 
-        panel.webview.postMessage({
-          type: 'appendUser',
-          message: userMessage.content,
-          tokens: promptTokenCount
-        });
+
 
         // Track full assistant text and token counts
         let assistantText = '';
@@ -114,12 +109,12 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           console.log(`✅ Assistant response token count: ${lastFullCount}`);
         };
 
-        await routeChatRequest({
-          model,
-          messages,
-          panel,
-          onToken,
-          onDone
+        panel.webview.postMessage({
+          type: 'sendToAI',
+          message: code,
+          mode: 'validate', 
+          fileContext,
+          language
         });
       } finally {
         setStreamingActive(panel, false);
@@ -172,11 +167,7 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
         addToSessionTokenCount(promptTokenCount, fileTokenCount);
 
-        panel.webview.postMessage({
-          type: 'appendUser',
-          message: userMessage.content,
-          tokens: promptTokenCount
-        });
+
 
         // Track full assistant text and token counts
         let assistantText = '';
@@ -202,12 +193,12 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           console.log(`✅ Assistant response token count: ${lastFullCount}`);
         };
 
-        await routeChatRequest({
-          model,
-          messages,
-          panel,
-          onToken,
-          onDone
+        panel.webview.postMessage({
+          type: 'sendToAI',
+          message: code,
+          mode: 'complete',
+          fileContext,
+          language
         });
       } finally {
         setStreamingActive(panel, false);

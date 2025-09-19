@@ -1,12 +1,17 @@
 # Change Log
 
-## 0.0.21 – Modularization, initial support for reasoning models
+## 0.0.21 – Fix Complete/Validate code commands extension-side messaging and stop logic
+
+- FIX: New session now sends signal to back end to stop generation - now works for Complete/Generate code commands as well
+- UPDATE: Streamline messaging routing path for Code Validate and Code Complete commands
+
+## 0.0.21 – Further stream cancellation enhamcements, stop health while responses streaming
 
 - FIX: New session now sends signal to back end to stop generation
 - FIX: LLM bubble pulsating now stops pulsating on time-out
 - UPDATE: Stop svc health check while stream is active (streaming state implies service is up). Resume once streaming ends, or if timeout is encountered.
 
-## 0.0.20 – Modularization, initial support for reasoning models
+## 0.0.20 – Dead response handling update, added more robust stream cancellation logic
 
 - ADD: error handling in bubbles in case user sends message to a dead endpoint
 - ADD: keywords to package.json for marketplace visibility
@@ -14,27 +19,27 @@
 - FIX: some thinking/reasoning bubbles styles not being removed
 - UPDATE: took a first stab at smoothing out scrolling in fast LLM response cases
 
-## 0.0.19 – Modularization, initial support for reasoning models
+## 0.0.19 – Style updates / svc banner update
 
 - UPDATE: usability/Styling enhancements
 - UPDATE: additional Health Service banner changes
 
-## 0.0.18 – Modularization, initial support for reasoning models
+## 0.0.18 – Service healtcheck update / thinking bubbles enhamcements / Deepseek support / Style update
 
 - UPDATE: svc healthcheck logic to avoid spam banners if LLM service is down; protection against disposed webviews
 - UPDATE: ehnancements to thinking bubbles/logic. Should now cover most reasoning scenarios
-- ADD: introduce support for ByteDance Seed thinking logic
+- ADD: introduce support for ByteDance Deepseek Seed thinking logic
 - UPDATE - light styling changes to chat bubbles. Style revamp planned for upcoming version.
 
-## 0.0.17 – Modularization, initial support for reasoning models
+## 0.0.17 – Fix 2 for includes in package.json
 
-- FIX - Re-include dependencies (good ol case of 'worked on my machine')
+- FIX - Re-include dependencies (fix good ol case of 'worked on my machine' resulting in broken extension on other machines)
 
-## 0.0.16 – Modularization, initial support for reasoning models
+## 0.0.16 – Fix for includes in package.json
 
 - FIX - Fix files inclusion in package.json to correctly bundle new file structure in extension
 
-## 0.0.15 – Modularization, initial support for reasoning models
+## 0.0.15 Modularization, initial support for reasoning models
 
 - UPDATE: massive redesign of chatPanel / chatPanelView components. Broke them up into sub-modules to facilitate ease of feature enablement in future.
 - ADD: initial support for reasoning models. Limited reasoning to 1/5 of configured context tokens (will implement separate variables for this in upcoming version)

@@ -46,9 +46,12 @@ export function setupChatSend(vscode) {
       if (!txt) return;
       input.value = '';
       sendBtn.textContent = 'Stop';
+
+      // Post sendToAI with explicit mode and context
       vscode.postMessage({
         type: 'sendToAI',
         message: txt,
+        mode: 'chat',                 // default mode for chat input
         useFileContext: getContextState()
       });
       scrollToBottom(true, 'smooth');
