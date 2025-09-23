@@ -1,3 +1,5 @@
+// src/handlers/promptBuilder.ts
+
 import * as vscode from 'vscode';
 import {
   validationPrompt,
@@ -7,12 +9,20 @@ import {
   chatPrompt
 } from '../static/prompts';
 
+// Shape expected by prompts.ts (string URIs)
+export interface NormalizedFileContext {
+  uri: string;
+  language: string;
+  content: string;
+}
+
 export type PromptMode = 'validate' | 'complete' | 'chat';
 
 export interface PromptContext {
   code: string;
   mode: PromptMode;
-  fileContext?: string;
+  fileContext?: string;                        // legacy single-file support
+  fileContexts?: NormalizedFileContext[];      // ✅ new multi-file support
   language?: string;
 }
 
@@ -44,17 +54,41 @@ export function buildOpenAIMessages({
   code,
   mode,
   fileContext,
+  fileContexts,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
   let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = chatPrompt(language, fileContext, contextSize);
+    systemPrompt = chatPrompt(
+      language,
+      fileContexts ??
+        (fileContext
+          ? [{ uri: 'active', language, content: fileContext }]
+          : undefined),
+      contextSize
+    );
   } else if (mode === 'validate') {
-    systemPrompt = validationPrompt(code, fileContext, language, contextSize);
+    systemPrompt = validationPrompt(
+      code,
+      fileContexts ??
+        (fileContext
+          ? [{ uri: 'active', language, content: fileContext }]
+          : undefined),
+      language,
+      contextSize
+    );
   } else {
-    systemPrompt = completionPrompt(code, fileContext, language, contextSize);
+    systemPrompt = completionPrompt(
+      code,
+      fileContexts ??
+        (fileContext
+          ? [{ uri: 'active', language, content: fileContext }]
+          : undefined),
+      language,
+      contextSize
+    );
   }
 
   const userPrompt =
@@ -77,17 +111,40 @@ export function buildOllamaMessages({
   code,
   mode,
   fileContext,
+  fileContexts,
   language = 'plaintext'
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
   let systemPrompt = '';
 
   if (mode === 'chat') {
-    systemPrompt = chatPrompt(language, fileContext);
+    systemPrompt = chatPrompt(
+      language,
+      fileContexts ??
+        (fileContext
+          ? [{ uri: 'active', language, content: fileContext }]
+          : undefined)
+    );
   } else if (mode === 'validate') {
-    systemPrompt = validationPrompt(code, undefined, language, contextSize);
+    systemPrompt = validationPrompt(
+      code,
+      fileContexts ??
+        (fileContext
+          ? [{ uri: 'active', language, content: fileContext }]
+          : undefined),
+      language,
+      contextSize
+    );
   } else {
-    systemPrompt = completionPrompt(code, undefined, language, contextSize);
+    systemPrompt = completionPrompt(
+      code,
+      fileContexts ??
+        (fileContext
+          ? [{ uri: 'active', language, content: fileContext }]
+          : undefined),
+      language,
+      contextSize
+    );
   }
 
   const userPrompt =

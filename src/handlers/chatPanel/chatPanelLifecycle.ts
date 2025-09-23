@@ -5,6 +5,7 @@ import { getWebviewContent } from '../../static/chatPanelView';
 import { sendInitialSettings, updateApiStatus, watchConfigChanges } from './chatPanelConfig';
 import { postFileContextTokens, refreshTokenStats } from './chatPanelTokens';
 import { attachMessageHandlers } from './chatPanelMessages';
+import { getContextFiles } from './chatPanelContext';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -84,12 +85,6 @@ export function getOrCreateChatPanel(): vscode.WebviewPanel {
   sendInitialSettings(chatPanel);
   updateApiStatus(chatPanel);
   postFileContextTokens(chatPanel);
-
-  chatPanel.onDidChangeViewState((e) => {
-    if (e.webviewPanel.visible) {
-      updateApiStatus(e.webviewPanel);
-    }
-  });
 
   attachMessageHandlers(chatPanel, () => chatPanel = undefined);
 

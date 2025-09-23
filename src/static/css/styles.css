@@ -595,3 +595,174 @@ button:active {
   white-space: nowrap;              
 }
 
+
+/* --- Multi-file context styles --- */
+
+#contextControls {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  background-color: var(--vscode-editorWidget-background);
+}
+
+.context-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.context-buttons button {
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-button-border, var(--vscode-editorWidget-border));
+  border-radius: 3px;
+  background-color: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+  cursor: pointer;
+}
+
+.context-buttons button:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+/* Flash effect on click */
+.context-buttons button:active,
+.remove-file-btn:active {
+  animation: flash 0.2s;
+}
+
+@keyframes flash {
+  0%   { background-color: var(--vscode-button-hoverBackground); }
+  50%  { background-color: var(--vscode-editor-background); }
+  100% { background-color: var(--vscode-button-secondaryBackground, var(--vscode-editor-background)); }
+}
+
+/* Scroll container (shared) */
+.context-files-list {
+  max-height: 150px;
+  overflow-y: auto;
+  border-radius: 3px;
+  padding: 4px;
+  background-color: var(--vscode-editor-background);
+  font-size: 0.85rem;
+}
+
+/* Single-file list gets its own border box */
+.context-files-list.single {
+  border: 1px solid var(--vscode-editorWidget-border);
+  padding: 0; /* align with dropdown summary */
+}
+
+/* Ensure single-file entry matches dropdown summary spacing */
+.context-files-list.single .context-file-entry {
+  padding: 2px 4px;  /* same as summary */
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+/* Drag-over highlight (applies to any list container with 'drag-over') */
+.context-files-list.drag-over,
+.context-files-list.single.drag-over {
+  border: 2px dashed var(--vscode-focusBorder);
+  background-color: var(--vscode-editorHoverWidget-background);
+}
+
+.context-file-entry {
+  display: flex;
+  justify-content: space-between; /* left info vs. right X */
+  align-items: center;
+  padding: 2px 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+}
+
+.context-file-entry:last-child {
+  border-bottom: none;
+}
+
+/* left side: filename + language/tokens */
+.context-file-entry .file-info {
+  display: inline;
+}
+
+.context-file-entry .filename {
+  font-weight: 600; /* bold filename */
+  margin-right: 4px; /* small spacing before [language] */
+}
+
+/* highlight when tokens exceed context size */
+.context-over-limit {
+  color: orange; /* or var(--vscode-editorWarning-foreground) */
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+/* --- Dropdown container gets a border box --- */
+details.context-files-dropdown {
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 3px;
+  background-color: var(--vscode-editor-background);
+}
+
+/* Summary line has a separator from contents */
+details.context-files-dropdown > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px;
+  margin-bottom: 0; /* remove extra margin to align with border box */
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  font-size: 0.85rem;
+
+  /* Hide native marker to avoid layout conflicts with flex */
+  list-style: none;
+}
+details.context-files-dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Custom caret attached to the label to avoid flex-item conflicts */
+details.context-files-dropdown > summary .context-summary-label {
+  font-weight: 600;
+  position: relative;
+  padding-left: 18px;            /* room for caret */
+}
+details.context-files-dropdown > summary .context-summary-label::before {
+  content: '▸';                  /* closed state */
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: transform 150ms ease;
+  color: var(--vscode-editor-foreground);
+}
+details.context-files-dropdown[open] > summary .context-summary-label::before {
+  content: '▾';                  /* open state */
+}
+
+/* Remove-all button on the right */
+details.context-files-dropdown > summary .remove-file-btn {
+  margin-left: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.remove-file-btn {
+  background: transparent;
+  border: none;
+  color: var(--vscode-errorForeground);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 4px;
+}
+.remove-file-btn:hover {
+  background-color: var(--vscode-editorHoverWidget-background);
+  border-radius: 3px;
+}
+
+#fileContextHeader {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--vscode-editor-foreground);
+}

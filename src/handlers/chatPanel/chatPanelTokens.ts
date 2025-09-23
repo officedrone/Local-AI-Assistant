@@ -1,28 +1,37 @@
 // src/handlers/chatPanel/chatPanelTokens.ts
 import * as vscode from 'vscode';
-import { getSessionTokenCount, getSpentFileContextTokens, getEffectiveFileContextTokens } from '../../commands/tokenActions';
+import {
+  getSessionTokenCount,
+  getSpentFileContextTokens,
+  getEffectiveFileContextTokens
+} from '../../commands/tokenActions';
 import { getMaxContextTokens } from './chatPanelConfig';
 
 export function refreshTokenStats(panel: vscode.WebviewPanel) {
-  postSessionTokenUpdate(panel, getSessionTokenCount(), getSpentFileContextTokens());
-}
+  const sessionTokens = getSessionTokenCount();
+  const spentFileTokens = getSpentFileContextTokens();
 
-export function postSessionTokenUpdate(
-  panel: vscode.WebviewPanel,
-  sessionTokens: number,
-  fileContextTokens: number
-) {
+  // Session panel should always reflect cumulative spent tokens
+  const totalTokens = sessionTokens + spentFileTokens;
+
   panel.webview.postMessage({
     type: 'sessionTokenUpdate',
     sessionTokens,
-    fileContextTokens,
-    totalTokens: sessionTokens + fileContextTokens
+    fileContextTokens: spentFileTokens,
+    totalTokens
   });
 }
 
 export function postFileContextTokens(panel: vscode.WebviewPanel) {
-  const effectiveTokens = getEffectiveFileContextTokens();
   const contextSize = getMaxContextTokens();
-  panel.webview.postMessage({ type: 'fileContextTokens', tokens: effectiveTokens, contextSize });
+  const effectiveTokens = getEffectiveFileContextTokens();
+
+  panel.webview.postMessage({
+    type: 'fileContextTokens',
+    tokens: effectiveTokens,
+    contextSize
+  });
+
+  //Refresh the combined session stats
   refreshTokenStats(panel);
 }

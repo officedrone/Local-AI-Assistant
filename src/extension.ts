@@ -3,6 +3,14 @@ import { registerChatPanelCommand } from './handlers/chatPanel/chatPanel';
 import { setupIdleTooltip } from './commands/idleTooltip';
 import { registerCodeActions } from './commands/codeActions';
 import { fetchAvailableModels } from './api/apiRouter';
+import {
+  addFileToContext,
+  addAllOpenEditorsToContext,
+  clearContextFiles,
+  getCodeEditor
+} from './handlers/chatPanel/chatPanelContext';
+
+
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -26,6 +34,11 @@ export function activate(context: vscode.ExtensionContext) {
   registerSelectApiTypeCommand(context);
   registerSetContextSizeCommand(context);
   createStatusBarItem(context);
+  registerAddFileToContextCommand(context);
+  registerAddAllOpenFilesCommand(context);
+  registerClearContextCommand(context);
+  registerAddCurrentFileCommand(context);
+
 
   // 2) Watch for apiType changes and clear model wherever it was set
   const onConfigChange = vscode.workspace.onDidChangeConfiguration(async (event) => {
@@ -244,6 +257,60 @@ export function registerSelectApiTypeCommand(context: vscode.ExtensionContext) {
     }
   );
 
+  context.subscriptions.push(cmd);
+}
+
+//Context - add file 
+function registerAddFileToContextCommand(context: vscode.ExtensionContext) {
+  const cmd = vscode.commands.registerCommand(
+    'localAIAssistant.addFileToContext',
+    async () => {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: 'Add to Context'
+      });
+      if (picked && picked[0]) {
+        await addFileToContext(picked[0]);
+      }
+    }
+  );
+  context.subscriptions.push(cmd);
+}
+
+//Context - all open files
+function registerAddAllOpenFilesCommand(context: vscode.ExtensionContext) {
+  const cmd = vscode.commands.registerCommand(
+    'localAIAssistant.addAllOpenFiles',
+    async () => {
+      await addAllOpenEditorsToContext();
+    }
+  );
+  context.subscriptions.push(cmd);
+}
+//Context - clear context
+function registerClearContextCommand(context: vscode.ExtensionContext) {
+  const cmd = vscode.commands.registerCommand(
+    'localAIAssistant.clearContext',
+    () => {
+      clearContextFiles();
+    }
+  );
+  context.subscriptions.push(cmd);
+}
+//Context - add current file
+function registerAddCurrentFileCommand(context: vscode.ExtensionContext) {
+  const cmd = vscode.commands.registerCommand(
+    'localAIAssistant.addCurrentFile',
+    async () => {
+      const editor = getCodeEditor(); // centralized helper skips webview etc.
+      if (editor) {
+        await addFileToContext(editor.document.uri);
+        // no notification needed — UI updates directly
+      } else {
+        vscode.window.showWarningMessage('No code editor available to add.');
+      }
+    }
+  );
   context.subscriptions.push(cmd);
 }
 

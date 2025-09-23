@@ -1,43 +1,44 @@
 // /src/static/webviewScripts/main.js
 import { setupScrollHandling } from './scrollUtils.js';
 import { setupChatSend } from './chat.js';
-import { setupContextControls } from './contextControls.js';
+import { setupContextControls, updateContextFileList } from './contextControls.js';
+import { updateTokenPanel, updateFileContextTokens, updateIncludeCtxStatus } from './sessionTokens.js';
 import { setupLLMControls } from './llmControls.js';
 import { setupMessageRouter } from './messageRouter.js';
-
 
 const vscode = acquireVsCodeApi();
 
 window.addEventListener('DOMContentLoaded', () => {
   console.log('Main.js loaded and DOM ready');
-  // Grab contextSize from a data attribute injected by chatPanelView.ts
   const contextSize = Number(document.body.dataset.contextSize) || 4096;
 
-  // Initialise UI behaviour
   setupScrollHandling();
   setupChatSend(vscode);
   setupContextControls(vscode);
   setupLLMControls(vscode);
 
-  // Start listening for messages from the extension
   setupMessageRouter(vscode, contextSize);
 
-  // New session button
-  document.getElementById('newSessionButton')?.addEventListener('click', () => {
-    // First, tell the webview to stop any active stream
-    vscode.postMessage({ type: 'stopStream' });
+  vscode.postMessage({ type: 'webviewReady' });
 
-    // Then, start a new session
+  document.getElementById('newSessionButton')?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'stopStream' });
     vscode.postMessage({ type: 'newSession' });
   });
 
-  // Settings button
+  document.addEventListener('click', (e) => {
+    const details = document.querySelector('details.context-files-dropdown');
+    if (!details) return;
+    if (details.open && !details.contains(e.target)) {
+      details.open = false;
+    }
+  });
+
   document.getElementById('settingsButton')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'openSettings' });
   });
 
-  // Global click handler for copy/insert links
-  document.body.addEventListener('click', (e) => {
+    document.body.addEventListener('click', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLAnchorElement)) return;
     const code = t.dataset.code || '';
@@ -53,6 +54,32 @@ window.addEventListener('DOMContentLoaded', () => {
     } else if (t.classList.contains('insert-link')) {
       vscode.postMessage({ type: 'insertCode', message: code });
     }
-    vscode.postMessage({ type: 'webviewReady' });
+    // Do not re-send webviewReady on every click; removed to avoid duplicate auto-adds/races
   });
+});
+
+
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+
+  // If the extension provided a contextSize, keep the dataset in sync
+  if (msg.contextSize != null) {
+    document.body.dataset.contextSize = String(msg.contextSize);
+  }
+
+  if (msg.type === 'sessionTokenUpdate') {
+    const contextSize = Number(document.body.dataset.contextSize || '4096');
+    updateTokenPanel(msg, contextSize);
+  }
+
+  if (msg.type === 'fileContextTokens') {
+    updateFileContextTokens(msg.tokens, msg.contextSize);
+  }
+
+  if (msg.type === 'contextUpdated') {
+    const files = Array.isArray(msg.files) ? msg.files : [];
+    updateIncludeCtxStatus(files.length > 0);
+    updateContextFileList(vscode, files); 
+  }
+
 });

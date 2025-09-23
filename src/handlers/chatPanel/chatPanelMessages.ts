@@ -2,14 +2,23 @@
 import * as vscode from 'vscode';
 import { getConfig, getMaxContextTokens, updateApiStatus } from './chatPanelConfig';
 import { postFileContextTokens, refreshTokenStats } from './chatPanelTokens';
-import { getCodeEditor } from './chatPanelContext';
+import {
+  getCodeEditor,
+  addFileToContext,
+  removeFileFromContext,
+  addAllOpenEditorsToContext,
+  clearContextFiles,
+  getContextFiles
+} from './chatPanelContext';
+
 import {
   countMessageTokens,
   countTextTokens,
   getFileContextTokens,
-  addToSessionTokenCount,
+  addChatTokens,
   resetSessionTokenCount,
   getEffectiveFileContextTokens,
+  markFileTokensSpent,
   setStreamingActive,
   isStreamingActive
 } from '../../commands/tokenActions';
@@ -21,41 +30,150 @@ import { getOrCreateChatPanel } from './chatPanelLifecycle';
 const CONFIG_SECTION = 'localAIAssistant';
 export const abortControllers = new WeakMap<vscode.WebviewPanel, AbortController>();
 
-
 let conversation: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
 let lastFileContextTokens = 0;
+
+
+
+// Multi-file context vars
+let lastContextState: { uri: string; tokens: number }[] = [];
+let pendingFileTokens: number | null = null;
+let pendingFileUris: string[] = [];
+let seenFiles = new Set<string>();
+let spentFiles = new Set<string>(); // URIs whose tokens have already been spent in this session
+
+// Multi-file context function to keep track of context
+function updatePendingFileTokens() {
+  const current = getContextFiles().map(f => ({
+    uri: f.uri.toString(),
+    tokens: f.tokens
+  }));
+
+  // Files newly present compared to lastContextState and not already spent this session
+  const newFiles = current.filter(
+    c =>
+      !lastContextState.some(prev => prev.uri === c.uri) &&
+      !seenFiles.has(c.uri) &&
+      !spentFiles.has(c.uri)
+  );
+
+  const newTokens = newFiles.reduce((sum, f) => sum + f.tokens, 0);
+  pendingFileTokens = newTokens > 0 ? newTokens : null;
+  pendingFileUris = newFiles.map(f => f.uri);
+
+  // Mark these files as “seen”
+  newFiles.forEach(f => seenFiles.add(f.uri));
+
+  lastContextState = current;
+}
+
+
 
 export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () => void) {
   panel.webview.onDidReceiveMessage(async (evt) => {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
 
     switch (evt.type) {
-      case 'toggleIncludeFileContext':
-        if (typeof evt.value === 'boolean') {
-          await config.update('context.includeFileContext', evt.value, vscode.ConfigurationTarget.Global);
-          postFileContextTokens(panel);
+
+      // Multi-file context cases
+      case 'addFileToContext': {
+        if (evt.uri) {
+          await addFileToContext(vscode.Uri.parse(evt.uri));
+          updatePendingFileTokens();
         }
         break;
+      }
+
+      case 'addCurrent': {
+      // Ensure an editor is focused so activeTextEditor is set
+      await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+
+      const ed = vscode.window.activeTextEditor;
+      if (ed) {
+        await addFileToContext(ed.document.uri);
+        updatePendingFileTokens();
+        lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+
+        // Update UI immediately
+        const files = getContextFiles().map(f => ({
+          uri: f.uri.toString(),
+          language: f.language,
+          tokens: f.tokens
+        }));
+        panel.webview.postMessage({ type: 'contextUpdated', files });
+      } else {
+        vscode.window.showWarningMessage('No active editor to add.');
+      }
+      break;
+    }
+
+
+
+
+
+      case 'addEditors': {
+        await addAllOpenEditorsToContext();
+        updatePendingFileTokens();
+        break;
+      }
+
+
+      case 'pickAndAddFile': {
+        // 1) showOpenDialog in extension land
+        const uris = await vscode.window.showOpenDialog({
+          canSelectMany: true,
+          openLabel: 'Add to Context'
+        });
+        // 2) push each picked file into your shared helper
+        if (uris) {
+          for (const uri of uris) {
+            await addFileToContext(uri);
+          }
+          updatePendingFileTokens();
+        }
+        break;
+      }
+
+      case 'removeFileFromContext': {
+        if (evt.uri) {
+          const uri = vscode.Uri.parse(evt.uri);
+          removeFileFromContext(uri);
+          updatePendingFileTokens();
+
+          // Forget only "seen" state so diffs remain accurate; do NOT clear spentFiles
+          seenFiles.delete(uri.toString());
+          lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+        }
+        break;
+      }
+
+
+      case 'clearContext': {
+        clearContextFiles();
+        updatePendingFileTokens();
+        break;
+      }
+
 
       case 'sendToAI': {
         stopHealthLoop(); // pause health checks while streaming
         await handleSendToAI(
           panel,
           evt.message,
-          evt.mode,  
-          evt.fileContext,
+          evt.mode,
+          undefined,        // ← always use extension-side context
           evt.language
         );
         break;
       }
 
-
-
       case 'stopGeneration':
         setStreamingActive(panel, false);
-        const controller = abortControllers.get(panel);
-        if (controller && !controller.signal.aborted) {
-          controller.abort();
+        {
+          const controller = abortControllers.get(panel);
+          if (controller && !controller.signal.aborted) {
+            controller.abort();
+          }
         }
         // Tell the webview to replace the placeholder with "Message Aborted by User" if no chunks yet
         panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
@@ -72,9 +190,11 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       case 'newSession': {
         // Stop any active generation
         setStreamingActive(panel, false);
-        const controller = abortControllers.get(panel);
-        if (controller && !controller.signal.aborted) {
-          controller.abort();
+        {
+          const controller = abortControllers.get(panel);
+          if (controller && !controller.signal.aborted) {
+            controller.abort();
+          }
         }
         // Tell the webview to clean up its UI
         panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
@@ -82,24 +202,56 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         resetSessionTokenCount();
         conversation = [];
         lastFileContextTokens = 0;
+
+        // Reset multi-file tracking for a fresh session
+        seenFiles.clear();
+        spentFiles.clear();            // fresh session: nothing spent yet
+        pendingFileTokens = null;
+        pendingFileUris = [];
+        lastContextState = [];
+
         panel.dispose();
         onDispose();
 
         const newPanel = getOrCreateChatPanel();
+
+        // Ensure an editor is focused so activeTextEditor is set
+        await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+
+        // Auto‑add the current file to context and immediately update the UI
+        const active = vscode.window.activeTextEditor;
+        if (active) {
+          await addFileToContext(active.document.uri);
+          updatePendingFileTokens(); // startup file becomes pending for first send
+          lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+
+          // Push current context to webview so UI reflects it right away
+          const files = getContextFiles().map(f => ({
+            uri: f.uri.toString(),
+            language: f.language,
+            tokens: f.tokens
+          }));
+          newPanel.webview.postMessage({ type: 'contextUpdated', files });
+        }
+
         lastFileContextTokens = getEffectiveFileContextTokens();
         refreshTokenStats(newPanel);
         updateApiStatus(newPanel);
         break;
+
       }
+
 
       case 'stopStream': {
         // turn off streaming flag
         setStreamingActive(panel, false);
 
         // abort the in-flight request
-        const controller = abortControllers.get(panel);
-        if (controller && !controller.signal.aborted) {
-          controller.abort();
+        {
+          const controller = abortControllers.get(panel);
+          if (controller && !controller.signal.aborted) {
+            controller.abort();
+          }
         }
 
         // trigger UI cleanup in the webview (no “no response” placeholder)
@@ -110,16 +262,8 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         break;
       }
 
-
       case 'insertCode':
         await handleInsertCode(evt.message);
-        break;
-
-      case 'requestIncludeFileContext':
-        panel.webview.postMessage({
-          type: 'includeFileContext',
-          value: getConfig<boolean>('context.includeFileContext', true)
-        });
         break;
 
       case 'invokeCommand':
@@ -128,10 +272,46 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         }
         break;
 
-      case 'webviewReady':
-      case 'refreshApiStatus':
+      case 'webviewReady': {
+        // Ensure the UI reflects current extension state
+        updateApiStatus(panel);
+
+        // Try to focus an editor so vscode.window.activeTextEditor is available.
+        // This avoids the cold-start race where the webview grabs focus before we read the active editor.
+        try {
+          await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+        } catch {}
+
+        // Auto-add the active editor file (only if there's an active editor)
+        const active = vscode.window.activeTextEditor;
+        if (active) {
+          await addFileToContext(active.document.uri);
+
+          // Compute pending tokens for the startup file (so first send will spend them)
+          updatePendingFileTokens();
+          lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+
+          // Immediately inform the webview so the UI reflects the added file
+          const files = getContextFiles().map(f => ({
+            uri: f.uri.toString(),
+            language: f.language,
+            tokens: f.tokens
+          }));
+          panel.webview.postMessage({ type: 'contextUpdated', files });
+        }
+
+        // Re-send token totals and refresh the visible token stats
+        postFileContextTokens(panel);
+        refreshTokenStats(panel);
+        break;
+      }
+
+
+      case 'refreshApiStatus': {
         updateApiStatus(panel);
         break;
+      }
+
     }
   });
 }
@@ -140,22 +320,15 @@ async function handleSendToAI(
   panel: vscode.WebviewPanel,
   rawMessage: string,
   mode: 'chat' | 'validate' | 'complete' = 'chat',
-  fileContextOverride?: string,
+  fileContextOverride?: string,        // now unused for token counting
   languageOverride?: string
 ) {
   const userMessage = rawMessage?.trim();
   if (!userMessage) return;
 
   const isFirstTurn = conversation.length === 0;
-  const includeCtx = getConfig<boolean>('context.includeFileContext', true);
   const apiType = getConfig<string>('apiLLM.config.apiType', 'openai');
   const model = getConfig<string>('apiLLM.config.model', '');
-
-  const ed = getCodeEditor();
-  const text = ed?.document.getText() ?? '';
-
-  const includeFileThisTurn = includeCtx && shouldIncludeContext(text, isFirstTurn);
-  const fileContext = fileContextOverride ?? (includeFileThisTurn ? text : undefined);
 
   let language: string | undefined = languageOverride;
   if (!language) {
@@ -164,48 +337,71 @@ async function handleSendToAI(
     } catch {}
   }
 
+  // Mark the turn as using streaming and pause health checks
   setStreamingActive(panel, true);
   stopHealthLoop();
 
-  // 1) Build the two-part prompt (system + user) for this mode
+  // 1) Build the two-part prompt (system + user) from current context
   const promptContext: PromptContext = {
     code: userMessage,
     mode,
-    fileContext,
+    fileContexts: getContextFiles().map(f => ({
+      uri: f.uri.toString(),
+      language: f.language,
+      content: f.content
+    })),
     language
   };
   const built = apiType === 'ollama'
     ? buildOllamaMessages(promptContext)
     : buildOpenAIMessages(promptContext);
 
-  // Destructure system & user messages
   const newSystem = built[0];
   const newUser   = built[1];
 
-  // 2) Insert or update the system message in the conversation
+  // 2) Always ensure conversation[0] is the latest system message
   const beforeTokens = countMessageTokens(conversation);
-  if (isFirstTurn) {
+  if (conversation.length === 0) {
     conversation.push(newSystem);
-  } else if (conversation[0]?.role !== 'system') {
-    conversation.unshift(newSystem);
-  } else if (includeFileThisTurn) {
+  } else if (conversation[0]?.role === 'system') {
     conversation[0] = newSystem;
+  } else {
+    conversation.unshift(newSystem);
   }
 
-  // 3) Push the *built* user prompt (with markdown fences!)  
+  // 3) Push the user prompt
   conversation.push({ role: 'user', content: newUser.content });
 
-  // 4) Recount tokens to figure out just the user-turn delta
-  const afterTokens = countMessageTokens(conversation);
-  let userTurnTokens = Math.max(0, afterTokens - beforeTokens);
-  if (isFirstTurn && includeFileThisTurn) {
-    const ctxTokens = getFileContextTokens();
-    userTurnTokens = Math.max(0, userTurnTokens - ctxTokens);
-  }
-  const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
-  addToSessionTokenCount(userTurnTokens, fileTokenCount);
+   // 4) Calculate token usage for this turn
+    // NEW: count ONLY the user prompt tokens for the bubble
+  const userTurnTokens = countMessageTokens([newUser]);
 
-  // Check total context size
+  // Add chat tokens for the user prompt to the session total
+  addChatTokens(userTurnTokens);
+
+  // Spend pending diff when present; otherwise on first turn spend effective tokens.
+  // Mark the corresponding URIs as spent to prevent re-add double-counting.
+  const pending = pendingFileTokens ?? 0;
+  if (pending > 0) {
+    markFileTokensSpent(pending);
+    for (const uri of pendingFileUris) {
+      spentFiles.add(uri);
+    }
+    pendingFileTokens = null;
+    pendingFileUris = [];
+  } else if (isFirstTurn) {
+    const effective = getEffectiveFileContextTokens();
+    if (effective > 0) {
+      markFileTokensSpent(effective);
+      for (const f of getContextFiles()) {
+        spentFiles.add(f.uri.toString());
+      }
+    }
+  }
+
+
+
+  // 5) Warn if over limit
   const total = countMessageTokens(conversation);
   const contextSize = getMaxContextTokens();
   if (total > contextSize) {
@@ -214,17 +410,22 @@ async function handleSendToAI(
     );
   }
 
-  // 5) Append built user prompt as single markdown-rendered bubble
+  // 6) Append user bubble
   panel.webview.postMessage({
     type: 'appendUser',
     message: newUser.content,
-    tokens: userTurnTokens
+    chatTokens: userTurnTokens,
+    fileTokens: pendingFileTokens ?? 0
   });
+
+  // Reset after using once
+  pendingFileTokens = null;
+
   refreshTokenStats(panel);
 
-  // 6) Start the stream
   const controller = new AbortController();
   abortControllers.set(panel, controller);
+
   try {
     await routeChatRequest({
       model,
@@ -234,24 +435,20 @@ async function handleSendToAI(
       onToken: (chunk) => {
         if (!isStreamingActive(panel)) return;
         const chunkTokens = countTextTokens(chunk);
-        addToSessionTokenCount(chunkTokens, 0);
+        // Add streaming tokens to chat-only session counter
+        addChatTokens(chunkTokens);
         refreshTokenStats(panel);
       },
-      onDone: () => {
-        // Normal completion — restart health checks
-        startHealthLoop(panel);
-      }
+      onDone: () => startHealthLoop(panel)
     });
     setStreamingActive(panel, false);
   } catch (err) {
     setStreamingActive(panel, false);
-    // Tell the webview to replace the placeholder with "Unknown Error" if no chunks yet
     panel.webview.postMessage({ type: 'earlyEnd', reason: 'Unknown Error' });
     await updateApiStatus(panel);
     throw err;
   }
 }
-
 
 
 async function handleInsertCode(message: string) {

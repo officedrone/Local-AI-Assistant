@@ -9,10 +9,6 @@ export function getWebviewContent(
   panel: vscode.WebviewPanel
 ): string {
   // Read user settings
-  const includeCtx = vscode.workspace
-    .getConfiguration(CONFIG_SECTION)
-    .get<boolean>('context.includeFileContext', true);
-
   const contextSize = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
     .get<number>('context.contextSize', 4096);
@@ -34,35 +30,16 @@ export function getWebviewContent(
 
   // Build URIs to static resources
   const styleUri = panel.webview.asWebviewUri(
-    vscode.Uri.joinPath(
-      context.extensionUri,
-      'src',
-      'static',
-      'css',
-      'styles.css'
-    )
+    vscode.Uri.joinPath(context.extensionUri, 'src', 'static', 'css', 'styles.css')
   );
 
   const mdItUri = panel.webview.asWebviewUri(
-    vscode.Uri.joinPath(
-      context.extensionUri,
-      'src',
-      'static',
-      'css',
-      'markdown-it.min.js'
-    )
+    vscode.Uri.joinPath(context.extensionUri, 'src', 'static', 'css', 'markdown-it.min.js')
   );
 
   const mainJsUri = panel.webview.asWebviewUri(
-    vscode.Uri.joinPath(
-      context.extensionUri,
-      'src',
-      'static',
-      'webviewScripts',
-      'main.js'
-    )
+    vscode.Uri.joinPath(context.extensionUri, 'src', 'static', 'webviewScripts', 'main.js')
   );
-
 
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -125,12 +102,17 @@ export function getWebviewContent(
     </div>
   </div>
 
-  <div id="fileContextContainer">
-    <label for="contextCheckbox">
-      <input type="checkbox" id="contextCheckbox" ${includeCtx ? 'checked' : ''}/>
-      <span>Include current file in context</span>
-      <span id="contextTokenCount"></span>
-    </label>
+  <!--Multi-file context controls -->
+  <div id="contextControls">
+    <div class="context-buttons">
+      <button id="addCurrentBtn" title="Add the active editor">📄 Add Current</button>
+      <button id="addFileBtn" title="Add a file from disk">➕ Add File</button>
+      <button id="addEditorsBtn" title="Add all opened editors">📂 Add Editors</button>
+      <button id="clearContextBtn" title="Clear context files">🗑️ Clear</button>
+    </div>
+    <div id="contextFileList" class="context-file-list">
+      <em>No files in context</em>
+    </div>
   </div>
 
   <script src="${mdItUri}"></script>

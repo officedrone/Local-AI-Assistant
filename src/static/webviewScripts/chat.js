@@ -1,30 +1,40 @@
 // src/static/webviewScripts/chat.js
 import { renderMd, injectLinks } from './markdownUtils.js';
-import { scrollToBottom } from './scrollUtils.js';
-import { getContextState } from './contextControls.js';
-import { setAutoScrollEnabled, setUserInitiatedScroll } from './scrollUtils.js';
+import { scrollToBottom, setAutoScrollEnabled, setUserInitiatedScroll } from './scrollUtils.js';
 
 let isStreaming = false;
 let assistantRaw = '';
 let assistantElem = null;
 
-export function appendBubble(raw, cls, tokenCount, skipRender = false) {
+export function appendBubble(raw, cls, chatTokens, fileTokens = 0, skipRender = false) {
   const chat = document.getElementById('chat-container');
   const bubble = document.createElement('div');
   bubble.className = 'message ' + cls;
   const prefix = cls === 'user-message' ? 'You:' : 'Assistant:';
   const content = skipRender ? raw : renderMd(raw);
+
+  let tokenInfo = '';
+  if (chatTokens != null) {
+    tokenInfo = `🧮 ${chatTokens} tokens`;
+    if (fileTokens > 0) {
+      tokenInfo += ` + ${fileTokens} file context`;
+    }
+    tokenInfo = `<div class="token-count">${tokenInfo}</div>`;
+  }
+
   bubble.innerHTML =
     `<div class="markdown-body">
-      <strong>${prefix}</strong><br/>
-      ${content}
-      ${tokenCount != null ? `<div class="token-count">🧮 ${tokenCount} tokens</div>` : ''}
-    </div>`;
+       <strong>${prefix}</strong><br/>
+       ${content}
+       ${tokenInfo}
+     </div>`;
+
   injectLinks(bubble);
   chat.appendChild(bubble);
   scrollToBottom(true, 'smooth');
   return bubble;
 }
+
 
 
 export function setStreamingState(state) {
@@ -47,12 +57,11 @@ export function setupChatSend(vscode) {
       input.value = '';
       sendBtn.textContent = 'Stop';
 
-      // Post sendToAI with explicit mode and context
+      // Post sendToAI with explicit mode
       vscode.postMessage({
         type: 'sendToAI',
         message: txt,
-        mode: 'chat',                 // default mode for chat input
-        useFileContext: getContextState()
+        mode: 'chat'
       });
       scrollToBottom(true, 'smooth');
       setUserInitiatedScroll(false);

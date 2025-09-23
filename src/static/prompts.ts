@@ -15,10 +15,25 @@ const getMaxThinkTokens = (contextSize?: number): number => {
   return Math.max(1, Math.floor(safeContextSize / 5));
 };
 
+/**
+ * Utility: format one or more file contexts into a single string.
+ */
+export function formatFileContexts(
+  contexts?: { uri: string; language: string; content: string }[]
+): string | undefined {
+  if (!contexts || contexts.length === 0) return undefined;
+  return contexts
+    .map(
+      (f) =>
+        `// File: ${f.uri}\n\`\`\`${f.language}\n${f.content.trim()}\n\`\`\``
+    )
+    .join('\n\n');
+}
+
 // ---------- Chat Prompt ----------
 export const chatPrompt = (
   language: string,
-  fileContext?: string,
+  fileContexts?: { uri: string; language: string; content: string }[],
   contextSize?: number
 ): string => {
   const maxThinkTokens = getMaxThinkTokens(contextSize);
@@ -37,8 +52,9 @@ After closing </think>, follow these instructions for your final answer:
 - Answer clearly and concisely.
 - Provide only relevant code blocks, not the full file unless explicitly requested.`;
 
-  if (fileContext) {
-    prompt += `\n\nHere is the current file context:\n${fileContext}`;
+  const formatted = formatFileContexts(fileContexts);
+  if (formatted) {
+    prompt += `\n\nHere are the current file contexts:\n${formatted}`;
   }
   return prompt;
 };
@@ -57,13 +73,15 @@ ${code.trim()}
 
 export const validationPrompt = (
   code: string,
-  context?: string,
+  contexts?: { uri: string; language: string; content: string }[],
   language: string = 'plaintext',
   contextSize?: number
 ): string => {
   const maxThinkTokens = getMaxThinkTokens(contextSize);
   const approxWords = Math.floor(maxThinkTokens / 0.75);
   const approxSentences = Math.ceil(maxThinkTokens / 20);
+
+  const formatted = formatFileContexts(contexts);
 
   return `
 You are a code validation assistant.
@@ -84,7 +102,7 @@ After closing </think>, follow these instructions for your final answer:
   - Share only the necessary revised part.
   - Explain changes with a numbered list. Be brief when providing explanations.
 
-${context ? `Reference context:\n\`\`\`${language}\n${context.trim()}\n\`\`\`` : ''}
+${formatted ? `Reference contexts:\n${formatted}` : ''}
 
 Code to validate:\n\`\`\`${language}\n${code.trim()}\n\`\`\`
 `;
@@ -104,13 +122,15 @@ ${code.trim()}
 
 export const completionPrompt = (
   code: string,
-  context?: string,
+  contexts?: { uri: string; language: string; content: string }[],
   language: string = 'plaintext',
   contextSize?: number
 ): string => {
   const maxThinkTokens = getMaxThinkTokens(contextSize);
   const approxWords = Math.floor(maxThinkTokens / 0.75);
   const approxSentences = Math.ceil(maxThinkTokens / 20);
+
+  const formatted = formatFileContexts(contexts);
 
   return `
 You are a code generation assistant.
@@ -131,7 +151,7 @@ After closing </think>, follow these instructions for your final answer:
   - Share only the non-matching addition.
   - Use bullet points to describe changes. Be brief when describing the changes.
 
-${context ? `Reference context:\n\`\`\`${language}\n${context.trim()}\n\`\`\`` : ''}
+${formatted ? `Reference contexts:\n${formatted}` : ''}
 
 Code to complete:\n\`\`\`${language}\n${code.trim()}\n\`\`\`
 `;

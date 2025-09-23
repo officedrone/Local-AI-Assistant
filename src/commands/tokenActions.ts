@@ -2,16 +2,21 @@
 import encodingForModel from 'gpt-tokenizer';
 import * as vscode from 'vscode';
 import { getActiveChatPanel } from '../handlers/chatPanel/chatPanel';
-import { postSessionTokenUpdate } from '../handlers/chatPanel/chatPanelTokens';
-
+import { refreshTokenStats } from '../handlers/chatPanel/chatPanelTokens';
+import { getContextFiles } from '../handlers/chatPanel/chatPanelContext';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
-// --- streaming guard (single source of truth) ---
+// --- streaming & per-turn guards ---
 const streamingActive = new WeakMap<vscode.WebviewPanel, boolean>();
+const turnFileTokensCounted = new WeakMap<vscode.WebviewPanel, boolean>();
 
 export function setStreamingActive(panel: vscode.WebviewPanel, active: boolean) {
   streamingActive.set(panel, active);
+  if (!active) {
+    // Reset per-turn guard when streaming ends
+    turnFileTokensCounted.set(panel, false);
+  }
 }
 
 export function isStreamingActive(panel: vscode.WebviewPanel): boolean {
@@ -33,16 +38,16 @@ export function countTextTokens(text: string): number {
   return encodingForModel.encode(text).length;
 }
 
-// Always count tokens in the currently active file, regardless of checkbox
+// --- File context token helpers ---
+
+/** Count tokens in all files currently in context, regardless of checkbox. */
 export function getFileContextTokens(): number {
-  const editor = vscode.window.visibleTextEditors.find(
-    ed => ed.document.uri.scheme !== 'vscode-webview'
-  );
-  if (!editor) return 0;
-  return countTextTokens(editor.document.getText());
+  return getContextFiles()
+    .map(f => countTextTokens(f.content))
+    .reduce((a, b) => a + b, 0);
 }
 
-// Count tokens in the active file only if context is enabled
+/** Count tokens in all files currently in context, only if context is enabled. */
 export function getEffectiveFileContextTokens(): number {
   const includeCtx = vscode.workspace
     .getConfiguration(CONFIG_SECTION)
@@ -50,45 +55,69 @@ export function getEffectiveFileContextTokens(): number {
   return includeCtx ? getFileContextTokens() : 0;
 }
 
-// Get the chat-only token count (excluding file context)
+// --- Session (chat-only) token tracking ---
+let sessionTokenCount = 0;
+/** Cumulative file-context tokens spent across turns (does not decrease). */
+let spentFileContextTokens = 0;
+
+/** Chat-only token count (excluding file context). */
 export function getChatTokenCount(): number {
   return sessionTokenCount;
 }
 
-// Session token tracking
-let sessionTokenCount = 0;
-let spentFileContextTokens = 0;
-
-// Add tokens to the session total and update UI (guarded)
-export function addToSessionTokenCount(chatTokens: number, fileContextTokens: number): void {
-  const panel = getActiveChatPanel();
-  if (panel && !isStreamingActive(panel)) return;
-
-  sessionTokenCount += chatTokens;
-  spentFileContextTokens += fileContextTokens;
-
-  if (panel) {
-    postSessionTokenUpdate(
-      panel,
-      getSessionTokenCount(),
-      getSpentFileContextTokens()
-    );
-  }
-}
-
-
-// Reset the session token count
-export function resetSessionTokenCount(): void {
-  sessionTokenCount = 0;
-  spentFileContextTokens = 0;
-}
-
-// Get the current session token count
 export function getSessionTokenCount(): number {
   return sessionTokenCount;
 }
 
-// Get the spent file context token count
 export function getSpentFileContextTokens(): number {
   return spentFileContextTokens;
+}
+
+/**
+ * Mark file-context tokens as "spent" for the current turn.
+ * Adds the effective file-context tokens ONCE per turn, guarded during streaming.
+ */
+export function markFileTokensSpentForTurn(): void {
+  const panel = getActiveChatPanel();
+  if (!panel) return;
+
+  if (turnFileTokensCounted.get(panel) === true) return;
+
+  const effective = getEffectiveFileContextTokens();
+  spentFileContextTokens += effective;
+  turnFileTokensCounted.set(panel, true);
+
+  refreshTokenStats(panel);
+}
+
+
+//Increment spent by a specific amount (e.g., only newly-added files)
+export function markFileTokensSpent(amount: number) {
+  if (amount > 0) {
+    spentFileContextTokens += amount;
+  }
+}
+
+/**
+ * Add tokens from chat messages (user + assistant) to the session total and refresh UI.
+ * Do NOT include file-context tokens here — they are computed live and "spent" separately.
+ */
+export function addChatTokens(chatTokens: number): void {
+  const panel = getActiveChatPanel();
+  if (!panel) return;
+
+  sessionTokenCount += chatTokens;
+  refreshTokenStats(panel);
+}
+
+/** Reset chat-only and spent counters at the start of a new session. */
+export function resetSessionTokenCount(): void {
+  sessionTokenCount = 0;
+  spentFileContextTokens = 0;
+
+  const panel = getActiveChatPanel();
+  if (panel) {
+    turnFileTokensCounted.set(panel, false);
+    refreshTokenStats(panel);
+  }
 }

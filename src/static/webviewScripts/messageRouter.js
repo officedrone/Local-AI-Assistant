@@ -1,7 +1,7 @@
 // src/static/webviewScripts/messageRouter.js
 import { appendBubble, getStreamingState, setStreamingState } from './chat.js';
-import { updateContextTokens } from './contextControls.js';
-import { updateTokenPanel } from './sessionTokens.js';
+import { updateContextTokens, updateContextFileList } from './contextControls.js';
+import { updateTokenPanel, updateFileContextTokens  } from './sessionTokens.js';
 import { updateServiceStatus } from './serviceStatus.js';
 import {
   scrollToBottomImmediate,
@@ -20,7 +20,8 @@ let noChunkTimer = null;
 
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
-    const { type, message, tokens, sessionTokens, fileContextTokens, totalTokens } = ev.data;
+    const { type, message, sessionTokens, fileContextTokens, totalTokens } = ev.data;
+
 
     switch (type) {
       case 'startStream': {
@@ -170,11 +171,15 @@ export function setupMessageRouter(vscode, contextSize) {
 
 
 
-      case 'appendAssistant':
+      case 'appendAssistant': {
+        const { message, tokens } = ev.data;
         if (!getStreamingState().isStreaming && message && typeof tokens === 'number') {
           appendBubble(message, 'ai-message', tokens);
         }
         break;
+      }
+
+
 
       case 'endStream':
       case 'stoppedStream': {
@@ -208,30 +213,33 @@ export function setupMessageRouter(vscode, contextSize) {
       }
 
 
-      case 'appendUser':
-        if (message && typeof tokens === 'number') {
-          appendBubble(message, 'user-message', tokens);
+      case 'appendUser': {
+        const { message, chatTokens, fileTokens } = ev.data;
+        if (message && typeof chatTokens === 'number') {
+          appendBubble(message, 'user-message', chatTokens, fileTokens || 0);
         }
         break;
+      }
+
+
 
       case 'fileContextTokens':
-        updateContextTokens(tokens, contextSize);
+        updateFileContextTokens(tokens, contextSize);
         break;
 
       case 'finalizeAI': {
         const state = getStreamingState();
+        const { tokens } = ev.data;
         if (state.assistantElem && typeof tokens === 'number') {
           const tdiv = document.createElement('div');
           tdiv.className = 'token-count';
           tdiv.textContent = '🧮 ' + tokens + ' tokens';
           state.assistantElem.querySelector('.markdown-body').appendChild(tdiv);
-
-          if (shouldAutoScroll) {
-            scrollToBottomImmediate(true);
-          }
+          if (shouldAutoScroll) scrollToBottomImmediate(true);
         }
         break;
       }
+
 
       case 'setModel': {
         const modelSpan = document.getElementById('modelNameBox');
@@ -334,6 +342,16 @@ export function setupMessageRouter(vscode, contextSize) {
         });
         break;
       }
+
+      //update context file list in UI
+      case 'contextUpdated': {
+        updateContextFileList(vscode, ev.data.files);
+        break;
+      }
+
+      case 'invokeCommand':
+      // This type is handled by the extension host, not the webview router.
+      break;
 
 
       default:

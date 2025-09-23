@@ -1,6 +1,11 @@
 # Change Log
 
-## 0.0.21 – Fix Complete/Validate code commands extension-side messaging and stop logic
+## 0.0.23 – Multi-file context implementation
+
+- ADD: Added the ability to add multiple files to context
+- UPDATE: Styling updates
+
+## 0.0.22 – Fix Complete/Validate code commands extension-side messaging and stop logic
 
 - FIX: New session now sends signal to back end to stop generation - now works for Complete/Generate code commands as well
 - UPDATE: Streamline messaging routing path for Code Validate and Code Complete commands

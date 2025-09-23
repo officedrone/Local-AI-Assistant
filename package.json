@@ -4,7 +4,7 @@
   "description": "A VS Code extension that interacts with a LLM API endpoint on your network",
   "publisher": "officedrone",
   "icon": "media/icon.png",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "repository": {
     "type": "git",
     "url": "https://github.com/officedrone/local-ai-assistant"
@@ -87,6 +87,26 @@
       {
         "command": "extension.setContextSize",
         "title": "Set Context Size",
+        "category": "Local AI Assistant"
+      },
+      {
+        "command": "localAIAssistant.addFileToContext",
+        "title": "Add File to Context",
+        "category": "Local AI Assistant"
+      },
+      {
+        "command": "localAIAssistant.addAllOpenFiles",
+        "title": "Add All Open Files to Context",
+        "category": "Local AI Assistant"
+      },
+      {
+        "command": "localAIAssistant.clearContext",
+        "title": "Clear Context Files",
+        "category": "Local AI Assistant"
+      },
+      {
+        "command": "localAIAssistant.addCurrentFile",
+        "title": "Add Current File to Context",
         "category": "Local AI Assistant"
       }
 

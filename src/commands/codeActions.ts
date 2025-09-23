@@ -11,9 +11,13 @@ import { getOrCreateChatPanel } from '../handlers/chatPanel/chatPanel';
 import encodingForModel from 'gpt-tokenizer';
 import {
   countMessageTokens,
-  addToSessionTokenCount,
   countTextTokens,
-  setStreamingActive
+  getFileContextTokens,
+  addChatTokens,
+  resetSessionTokenCount,
+  getEffectiveFileContextTokens,
+  setStreamingActive,
+  isStreamingActive
 } from './tokenActions';
 
 const CONFIG_SECTION = 'localAIAssistant';
@@ -77,10 +81,13 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         // Count and display user tokens
         const userMessage = messages.find(m => m.role === 'user')!;
         const promptTokenCount = countMessageTokens([userMessage]);
-        const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
-        addToSessionTokenCount(promptTokenCount, fileTokenCount);
 
+        // Compute the actual file-context tokens that will be sent
+        const fileTokensSent = includeCtx ? getEffectiveFileContextTokens() : 0;
 
+        // Do NOT mark spent here — let the canonical send/handleSendToAI flow record spent file tokens once
+        // Add chat tokens for the user message
+        addChatTokens(promptTokenCount);
 
         // Track full assistant text and token counts
         let assistantText = '';
@@ -94,9 +101,8 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           const delta = fullCount - lastFullCount;
           lastFullCount = fullCount;
 
-          // Update session token count by delta
-          addToSessionTokenCount(delta, 0);
-
+          // Update session token count by delta (assistant tokens)
+          addChatTokens(delta);
 
           // Send updated total tokens for this bubble
           panel.webview.postMessage({
@@ -109,12 +115,15 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           console.log(`✅ Assistant response token count: ${lastFullCount}`);
         };
 
+        // 🔑 Send both chatTokens and fileTokens so bubble can render both
         panel.webview.postMessage({
           type: 'sendToAI',
           message: code,
-          mode: 'validate', 
+          mode: 'validate',
           fileContext,
-          language
+          language,
+          chatTokens: promptTokenCount,
+          fileTokens: fileTokensSent
         });
       } finally {
         setStreamingActive(panel, false);
@@ -164,10 +173,13 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         // Count and display user tokens
         const userMessage = messages.find(m => m.role === 'user')!;
         const promptTokenCount = countMessageTokens([userMessage]);
-        const fileTokenCount = fileContext ? countTextTokens(fileContext) : 0;
-        addToSessionTokenCount(promptTokenCount, fileTokenCount);
 
+        // Compute the actual file-context tokens that will be sent
+        const fileTokensSent = includeCtx ? getEffectiveFileContextTokens() : 0;
 
+        // Do NOT mark spent here — let the canonical send/handleSendToAI flow record spent file tokens once
+        // Add chat tokens for the user message
+        addChatTokens(promptTokenCount);
 
         // Track full assistant text and token counts
         let assistantText = '';
@@ -180,8 +192,8 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           const delta = fullCount - lastFullCount;
           lastFullCount = fullCount;
 
-          addToSessionTokenCount(delta, 0);
-
+          // Add assistant tokens
+          addChatTokens(delta);
 
           panel.webview.postMessage({
             type: 'tokenUpdate',
@@ -193,12 +205,15 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           console.log(`✅ Assistant response token count: ${lastFullCount}`);
         };
 
+        // 🔑 Send both chatTokens and fileTokens so bubble can render both
         panel.webview.postMessage({
           type: 'sendToAI',
           message: code,
           mode: 'complete',
           fileContext,
-          language
+          language,
+          chatTokens: promptTokenCount,
+          fileTokens: fileTokensSent
         });
       } finally {
         setStreamingActive(panel, false);
