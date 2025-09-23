@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.0.24 – Multi-file context implementation
+
+- FIX: Fix auto-added file context tokens not being counted on first turn
+- UPDATE: Styling updates
+
 ## 0.0.23 – Multi-file context implementation
 
 - ADD: Added the ability to add multiple files to context
