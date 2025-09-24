@@ -46,7 +46,7 @@ let spentFiles = new Set<string>(); // URIs whose tokens have already been spent
 function updatePendingFileTokens() {
   const current = getContextFiles().map(f => ({
     uri: f.uri.toString(),
-    tokens: f.tokens
+    tokens: f.tokens,
   }));
 
   // Files newly present compared to lastContextState and not already spent this session
@@ -58,8 +58,15 @@ function updatePendingFileTokens() {
   );
 
   const newTokens = newFiles.reduce((sum, f) => sum + f.tokens, 0);
-  pendingFileTokens = newTokens > 0 ? newTokens : null;
-  pendingFileUris = newFiles.map(f => f.uri);
+
+  // *** Accumulate instead of overwrite ***
+  if (newTokens > 0) {
+    pendingFileTokens = (pendingFileTokens ?? 0) + newTokens;
+    pendingFileUris.push(...newFiles.map(f => f.uri));
+  } else {
+    pendingFileTokens = null;      // nothing new
+    pendingFileUris = [];
+  }
 
   // Mark these files as “seen”
   newFiles.forEach(f => seenFiles.add(f.uri));

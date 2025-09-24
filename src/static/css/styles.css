@@ -624,6 +624,8 @@ button:active {
 
 .context-buttons button:hover {
   background-color: var(--vscode-button-hoverBackground);
+  transform: translateY(-1px);    
+  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
 }
 
 /* Flash effect on click */
@@ -652,6 +654,7 @@ button:active {
 .context-files-list.single {
   border: 1px solid var(--vscode-editorWidget-border);
   padding: 0; /* align with dropdown summary */
+  background-color: var(--vscode-button-secondaryBackground);
 }
 
 /* Ensure single-file entry matches dropdown summary spacing */
@@ -702,7 +705,12 @@ button:active {
 details.context-files-dropdown {
   border: 1px solid var(--vscode-editorWidget-border);
   border-radius: 3px;
-  background-color: var(--vscode-editor-background);
+  background-color: var(--vscode-editor-background);   
+}
+
+
+details.context-files-dropdown[open] > div.context-files-list {
+  background-color: var(--vscode-editor-background);   /* same as container, keeps it light */
 }
 
 /* Summary line has a separator from contents */
@@ -713,6 +721,10 @@ details.context-files-dropdown > summary {
   padding: 2px 4px;
   margin-bottom: 0; /* remove extra margin to align with border box */
   border-bottom: 1px solid var(--vscode-editorWidget-border);
+
+  /* Darker background for the header (change this hex or use a custom variable) */
+  background-color: var(--vscode-button-secondaryBackground);
+
   font-size: 0.85rem;
 
   /* Hide native marker to avoid layout conflicts with flex */

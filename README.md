@@ -25,7 +25,7 @@ The extension must be connected to your LLM before you can use it. Follow the st
 - Code validation / Code completion in chat
 - Code completion (in-line) - Coming soon
 - Tooltip / Right-click menu with extension commands
-- File context (multiple files coming soon) / Language auto-detection
+- File context management (add single file, all open files, clear context, add current file)
 - Chat / Extension Settings UI
 
 ## Validate Code Block
