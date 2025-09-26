@@ -1,780 +1,346 @@
-/* ─── GLOBAL BOX-SIZING ─────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+/* ─── GLOBAL BOX‑SIZING ─────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
 
 /* ─── FLEX LAYOUT ───────────────────────────── */
 html, body {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  margin: 0;
-  padding: 0;
-  font-family: var(--vscode-font-family, 'Segoe UI', system-ui, sans-serif);
+  display:flex; flex-direction:column;
+  height:100vh; margin:0; padding:0;
+  font-family:var(--vscode-font-family,'Segoe UI',system-ui,sans-serif);
 }
 
 /* ─── COLOR VARIABLES ───────────────────────── */
-:root {
-  --user-bg: var(--vscode-button-background);
-  --assistant-bg: var(--vscode-editorHoverWidget-background);
-
-  --user-text: var(--vscode-editor-foreground);
-  --assistant-text: var(--vscode-editor-foreground);
-
-  --code-bg: var(--vscode-editorWidget-background);
-  --code-border: var(--vscode-editorWidget-border);
-
-  --btn-bg: var(--vscode-button-background);
-  --btn-hover-bg: var(--vscode-button-hoverBackground);
+:root{
+  --user-bg:var(--vscode-button-background);
+  --assistant-bg:var(--vscode-editorHoverWidget-background);
+  --user-text:var(--vscode-editor-foreground);
+  --assistant-text:var(--vscode-editor-foreground);
+  --code-bg:var(--vscode-editorWidget-background);
+  --code-border:var(--vscode-editorWidget-border);
+  --btn-bg:var(--vscode-button-background);
+  --btn-hover-bg:var(--vscode-button-hoverBackground);
 }
 
 /* ─── PAGE & BUBBLES ─────────────────────────── */
-body {
-  background: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
-  padding: 20px;
+body{
+  background:var(--vscode-editor-background);
+  color:var(--vscode-editor-foreground); padding:20px;
 }
-
-.main-panel {
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-#chat-container {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: scroll;
-  padding: 10px;
-  background: linear-gradient(
-      180deg,
-      rgba(255,255,255,0.02),
-      rgba(255,255,255,0.04)
-    ),
-    var(--vscode-input-background);
-  border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 4px;
-  scroll-behavior: smooth;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+.main-panel{ width:100%; max-width:800px; margin:auto;
+             display:flex; flex-direction:column; gap:10px;}
+#chat-container{
+  flex:1 1 auto; display:flex; flex-direction:column; gap:10px;
+  overflow-y:auto; padding:10px;
+  background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.04)),var(--vscode-input-background);
+  border:1px solid var(--vscode-editorWidget-border); border-radius:4px;
+  scroll-behavior:smooth; box-shadow:0 4px 20px rgba(0,0,0,.08);
 }
 
 /* ─── CUSTOM SCROLLBAR ───────────────────────── */
-#chat-container::-webkit-scrollbar {
-  width: 8px;
+#chat-container::-webkit-scrollbar{width:8px;}
+#chat-container::-webkit-scrollbar-track{background:transparent;}
+#chat-container::-webkit-scrollbar-thumb{
+  background-color:var(--btn-bg); border-radius:4px; transition:.2s ease;
 }
-#chat-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-#chat-container::-webkit-scrollbar-thumb {
-  background-color: var(--btn-bg);
-  border-radius: 4px;
-  transition: background-color 0.2s ease;
-}
-#chat-container::-webkit-scrollbar-thumb:hover {
-  background-color: var(--btn-hover-bg);
+#chat-container::-webkit-scrollbar-thumb:hover{
+  background-color:var(--btn-hover-bg);
 }
 
 /* ─── BUBBLE STYLES ─────────────────────────── */
-.message {
-  position: relative;
-  background-clip: padding-box;
-  display: inline-block;
-  max-width: 80%;
-  padding: 10px 14px;
-  border-radius: 12px;
-  line-height: 1.4;
-  word-wrap: break-word;
-  font-size: 1rem;
-  border: none;
-  box-shadow: inset 0 0 0 1px var(--vscode-editorWidget-border),
-              0 2px 8px rgba(0,0,0,0.15);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  animation: slideUp 0.4s ease-out;
-}
-message:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12),
-              inset 0 0 0 1px var(--vscode-editorWidget-border);
-}
-.message::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow: 0 0 0 0 transparent;
-  transition: box-shadow 0.3s ease;
-}
-.message:hover::after {
-  box-shadow: 0 0 8px var(--btn-hover-bg);
+.message{ position:relative; background-clip:padding-box; display:inline-block;
+          max-width:80%; padding:10px 14px; border-radius:12px; line-height:1.4;
+          word-wrap:break-word; font-size:1rem; border:none;
+          box-shadow:inset 0 0 0 1px var(--vscode-editorWidget-border),0 2px 8px rgba(0,0,0,.15);
+          transition:.2s ease; animation:slideUp .4s ease-out;}
+.message:hover{ transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.12),inset 0 0 0 1px var(--vscode-editorWidget-border);}
+.message::after{content:""; position:absolute; inset:0; border-radius:inherit;
+                pointer-events:none; box-shadow:0 0 0 0 transparent; transition:.3s ease;}
+.message:hover::after{box-shadow:0 0 8px var(--btn-hover-bg);}
+
+@keyframes slideUp{
+  from{transform:translateY(10px); opacity:0;} to{transform:translateY(0); opacity:1;}
 }
 
+/* ─── USER / ASSISTANT BUBBLES ────────────────── */
+.user-message{ align-self:flex-end; background:var(--user-bg);
+              color:var(--user-text); text-align:left;}
+.user-message:hover{background:linear-gradient(to right,var(--btn-hover-bg),var(--user-bg));}
 
-@keyframes slideUp {
-  from { transform: translateY(10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
+.ai-message{
+  align-self:flex-start; background:var(--assistant-bg); color:var(--assistant-text);
+  text-align:left; max-width:100%; width:100%; display:block;
+  box-sizing:border-box;}
+.ai-message:hover{background:linear-gradient(to left,var(--code-bg),var(--assistant-bg));}
 
-.user-message {
-  align-self: flex-end;
-  background: var(--user-bg);
-  color: var(--user-text);
-  text-align: left;
-}
-.user-message:hover {
-  background: linear-gradient(to right, var(--btn-hover-bg), var(--user-bg));
-}
+/* ─── THINKING STATE ─────────────────────────── */
+.thinking,.pulsing{
+  opacity:.85; font-style:italic; animation:pulse 1.5s infinite ease-in-out;
+  background:repeating-linear-gradient(45deg,var(--assistant-bg),
+          var(--assistant-bg)10px,var(--code-bg)10px,var(--code-bg)20px);}
+@keyframes pulse{0%,100%{opacity:.6;}50%{opacity:1;}}
+.message.ai-message.thinking .markdown-body{
+  display:flex; flex-direction:column; max-height:12em;}
+.message.ai-message.thinking .thinking-header{flex:0 0 auto;font-weight:bold;padding:.25rem;}
+.message.ai-message.thinking .thinking-content{flex:1 1 auto;overflow-y:auto;padding:.25rem;}
 
-
-.ai-message {
-  align-self: flex-start;
-  background: var(--assistant-bg);
-  color: var(--assistant-text);
-  text-align: left;
-  /* Override the base .message width limit */
-  max-width: 100%;
-  width: 100%; /* ensures it fills the available container space */
-  display: block; /* so width applies fully */
-  box-sizing: border-box; /* padding stays inside the width */
-}
-
-.ai-message:hover {
-  background: linear-gradient(to left, var(--code-bg), var(--assistant-bg));
-}
-
-
-.thinking {
-  opacity: 0.85;
-  font-style: italic;
-  animation: pulse 1.5s infinite ease-in-out;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--assistant-bg),
-    var(--assistant-bg) 10px,
-    var(--code-bg) 10px,
-    var(--code-bg) 20px
-  );
-}
-.pulsing {
-  opacity: 0.85;
-  font-style: italic;
-  animation: pulse 1.5s infinite ease-in-out;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--assistant-bg),
-    var(--assistant-bg) 10px,
-    var(--code-bg) 10px,
-    var(--code-bg) 20px
-  );
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-/* Limit height and auto-scroll the thinking bubble's content */
-.message.ai-message.thinking .markdown-body {
-  display: flex;
-  flex-direction: column;
-  max-height: 12em; 
-}
-
-.message.ai-message.thinking .thinking-header {
-  flex: 0 0 auto; /* fixed height */
-  font-weight: bold;
-  padding: 0.25rem;
-}
-
-.message.ai-message.thinking .thinking-content {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  padding: 0.25rem;
-}
-
-/* ─── EARLY END / STATUS BUBBLES ─────────────────────────── */
-.ai-message.status-aborted {
-  background: linear-gradient(to left, #fef6f6, #f9eaea);
-  border-left: 4px solid #d9534f; /* soft red accent */
-  color: var(--assistant-text);
-}
-
-.ai-message.status-error {
-  background: linear-gradient(to left, #fff8f0, #fdf1e6);
-  border-left: 4px solid #f0ad4e; /* amber accent */
-  color: var(--assistant-text);
-}
-
-.ai-message .status-reason {
-  display: block;
-  font-size: 0.9rem;
-  font-style: italic;
-  opacity: 0.85;
-  margin-top: 4px;
-}
-
-
+/* ─── STATUS BUBBLES ─────────────────────────── */
+.ai-message.status-aborted{
+  background:linear-gradient(to left,#fef6f6,#f9eaea); border-left:4px solid #d9534f;}
+.ai-message.status-error{
+  background:linear-gradient(to left,#fff8f0,#fdf1e6); border-left:4px solid #f0ad4e;}
+.ai-message .status-reason{
+  display:block; font-size:.9rem; font-style:italic; opacity:.85;
+  margin-top:4px;}
 
 /* ─── CODE BLOCKS & INLINE CODE ────────────── */
-pre {
-  background: var(--code-bg);
-  border: 1px solid var(--code-border);
-  border-radius: 4px;
-  padding: 0.8em 1.2em;
-  font-family: monospace;
-  font-size: 0.9em;
-  overflow: auto;
-  margin: 1em 0;
-}
-
-code {
-  font-family: monospace;
-  background: var(--code-bg);
-  padding: 0.2em 0.4em;
-  border-radius: 4px;
-}
+pre{background:var(--code-bg); border:1px solid var(--code-border);
+    border-radius:4px; padding:.8em 1.2em; font-family:monospace;
+    font-size:.9em; overflow:auto; margin:1em 0;}
+code{font-family:monospace;background:var(--code-bg);padding:.2em .4em;border-radius:4px;}
 
 /* ─── BUTTONS & LINKS ───────────────────────── */
-#newSessionButton,
-#settingsButton {
-  padding: 6px 6px;
-  background: var(--btn-bg);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
-}
+#newSessionButton,#settingsButton{
+  padding:6px 6px; background:var(--btn-bg); color:white;
+  border:none; border-radius:4px; cursor:pointer;
+  transition:.2s ease,transform .1s ease,box-shadow .2s ease;
+  box-shadow:0 2px 6px rgba(0,0,0,.12);}
+#newSessionButton:hover,#settingsButton:hover{
+  background:var(--btn-hover-bg); transform:translateY(-1px);
+  box-shadow:0 4px 10px rgba(0,0,0,.16);}
+#newSessionButton:active,#settingsButton:active{transform:scale(.97);}
+button:active{transform:scale(.97);}
 
-#newSessionButton:hover,
-#settingsButton:hover {
-  background: var(--btn-hover-bg);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
-}
+.copy-link,.insert-link{
+  display:inline-block;margin:.5em .8em;padding:.4em .8em;
+  font-size:.85em;font-weight:500;color:var(--vscode-button-foreground);
+  background-color:var(--btn-bg);border:1px solid var(--btn-hover-bg);
+  border-radius:4px;text-decoration:none;cursor:pointer;
+  transition:.2s ease,background-color .2s ease,border-color .2s ease,
+             transform .1s ease,filter .2s ease;}
+.copy-link:hover,.insert-link:hover{
+  background-color:var(--btn-hover-bg);border-color:var(--vscode-focusBorder);
+  transform:translateY(-1px);filter:brightness(1.1);}
 
-#newSessionButton:active,
-#settingsButton:active {
-  transform: scale(0.97);
-}
-
-button:active {
-  transform: scale(0.97);
-}
-
-.copy-link,
-.insert-link {
-  display: inline-block;
-  margin-bottom: 4px;
-  margin-right: 8px;
-  padding: 4px 10px;
-  font-size: 0.85em;
-  font-weight: 500;
-  color: var(--vscode-button-foreground);
-  background-color: var(--btn-bg);
-  border: 1px solid var(--btn-hover-bg);
-  border-radius: 4px;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease, filter 0.2s ease;
-}
-
-.copy-link:hover,
-.insert-link:hover {
-  background-color: var(--btn-hover-bg);
-  border-color: var(--vscode-focusBorder);
-  transform: translateY(-1px);
-  filter: brightness(1.1);
-}
-
-/* ─── SCROLL-TO-BOTTOM BUTTON ───────────────── */
-#scrollToBottomButton {
-  position: fixed;
-  right: 60px;
-  bottom: 240px;
-  padding: 6px 10px;
-  background: var(--btn-bg);
-  color: var(--vscode-button-foreground);
-  border: 1px solid var(--btn-hover-bg);
-  border-radius: 4px;
-  cursor: pointer;
-  display: none;
-  z-index: 100;
-  transition: background-color 0.2s ease, transform 0.1s ease;
-}
-
-#scrollToBottomButton:hover {
-  background: var(--btn-hover-bg);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
-  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
-}
+/* ─── SCROLL‑TO‑BOTTOM BUTTON ───────────────── */
+#scrollToBottomButton{
+  position:fixed; right:60px; bottom:240px; padding:6px 10px;
+  background:var(--btn-bg); color:var(--vscode-button-foreground);
+  border:1px solid var(--btn-hover-bg); border-radius:4px; cursor:pointer;
+  display:none; z-index:100; transition:.2s ease,transform .1s ease;}
+#scrollToBottomButton:hover{
+  background:var(--btn-hover-bg); transform:translateY(-1px);
+  box-shadow:0 4px 10px rgba(0,0,0,.16);}
 
 /* ─── INPUT AREA ────────────────────────────── */
-.input-wrapper {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  padding-top: 10px;
-  padding-bottom: 4px;
-  gap: 10px;
-  width: 100%;
-  position: sticky;
-  bottom: 0;
-  background: var(--vscode-editor-background);
-}
-
-#messageInput {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 4px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  resize: vertical;
-  font-family: inherit;
-  font-size: 1rem;
-  line-height: 1.4;
-  min-height: 3em;
-}
-
-#messageInput:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--btn-hover-bg),
-              0 0 10px var(--btn-hover-bg);
-  transition: box-shadow 0.25s ease;
-}
-
-#sendButton {
-  width: 70px;
-  padding: 12px;
-  background: var(--btn-bg);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
-}
-#sendButton:hover {
-  background: var(--btn-hover-bg);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
-}
-#sendButton:active {
-  transform: scale(0.97);
-}
+.input-wrapper{display:flex; flex-direction:row; align-items:flex-end;
+               padding-top:10px;padding-bottom:4px;gap:10px;width:100%;
+               position:sticky; bottom:0; background:var(--vscode-editor-background);}
+#messageInput{
+  flex:1; padding:10px; border:1px solid var(--vscode-input-border);
+  border-radius:4px; background:var(--vscode-input-background);
+  color:var(--vscode-input-foreground); resize:vertical;
+  font-family:inherit;font-size:1rem;line-height:1.4; min-height:3em;}
+#messageInput:focus{
+  outline:none; box-shadow:0 0 0 2px var(--btn-hover-bg),0 0 10px var(--btn-hover-bg);
+  transition:.25s ease;}
+#sendButton{width:70px;padding:12px;background:var(--btn-bg);color:white;
+            border:none;border-radius:4px;cursor:pointer;text-align:center;
+            transition:.2s ease,transform .1s ease,box-shadow .2s ease;}
+#sendButton:hover{background:var(--btn-hover-bg);transform:translateY(-1px);
+                  box-shadow:0 4px 10px rgba(0,0,0,.16);}
+#sendButton:active{transform:scale(.97);}
 
 /* ─── FILE CONTEXT CHECKBOX ──────────────────── */
-#fileContextContainer {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px; 
-  padding: 6px 12px; 
-  margin-top: 8px;
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 4px; 
-}
-
-#fileContextContainer input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--btn-bg);
-  cursor: pointer;
-}
+#fileContextContainer{
+  flex:none; display:flex; align-items:center; gap:8px;
+  padding:6px 12px; margin-top:8px;
+  background:var(--vscode-input-background);
+  border:1px solid var(--vscode-editorWidget-border); border-radius:4px;}
+#fileContextContainer input[type="checkbox"]{
+  width:16px;height:16px;margin:0;accent-color:var(--btn-bg);cursor:pointer;}
 
 /* ─── LAYOUT STRUCTURE ───────────────────────── */
+.session-header{display:flex; align-items:center; gap:12px;}
+.button-stack{height:100%; display:flex; flex-direction:column;
+              align-items:flex-end; gap:6px;}
+#session-controls{
+  display:flex; flex-direction:column; gap:8px;
+  margin-bottom:12px; width:100%;}
+.session-buttons{display:flex; align-items:center; gap:8px;}
+.token-count{font-size:.8em;color:var(--vscode-input-foreground);
+             background:var(--vscode-editor-background);margin-top:4px;
+             border-radius:4px;}
 
-.session-header {
-  display: flex;
-  align-items: center; 
-  gap: 12px;           
-}
-
-.button-stack {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
-
-#session-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-  width: 100%;
-}
-
-.session-buttons {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.token-count {
-  font-size: 0.8em;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-editor-background);
-  margin-top: 4px;
-  border-radius: 4px;
-}
-
-/* ─── SESSION TOKENS PANEL (Scoreboard look) ───────────────────── */
-
-
+/* ─── SESSION TOKENS PANEL (Scoreboard) ───── */
 #sessionTokenContainer {
-  display: flex;
-  align-items: baseline; /* Align to text baseline instead of center */
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  white-space: nowrap;
-  padding: 8px 14px;
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 4px;
-  font-family: var(--vscode-font-family);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.05);
+  display:flex;
+  align-items:baseline;          /* text‑baseline alignment */
+  justify-content:space-between;
+  gap:8px;
+  flex-wrap:no-wrap;
+  overflow-x:auto;
+  white-space:nor
+w;
+  padding:8px 14px;
+  background:var(--vscode-input-background);
+  border:1px solid var(--vscode-editorWidget-border);
+  border-radius:4px;
+  font-family:var(--vscode-font-family);
+  font-weight:600;
+  letter-spacing:.5px;
+  box-shadow:inset 0 -1px 0 rgba(255,255,255,.05);
 }
 
-.tokenTitle {
-  font-size: 0.9em;
-  font-weight: bold;
-  color: var(--vscode-input-foreground);
-  text-transform: uppercase;
-  margin: 0;
-  line-height: 1.2; /* Adjust to match tokenItem */
-}
-
-.tokenRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: baseline; /* Ensure children align to baseline */
-}
-
+/* common token item styling */
+.tokenTitle,
+.tokenRow,
 .tokenItem {
-  font-size: 0.85em;
-  color: var(--vscode-input-foreground);
-  white-space: nowrap;
-  line-height: 1.2; /* Match title line height */
+  line-height:1.2;              /* keeps all items on same baseline */
+}
+.tokenTitle{
+  font-size:.9em;
+  font-weight:bold;
+  color:var(--vscode-input-foreground);
+  text-transform:uppercase;
+  margin:0;
+}
+.tokenRow{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+}
+.tokenItem{
+  font-size:.85em;
+  color:var(--vscode-input-foreground);
+  white-space:nowrap;
 }
 
-
+/* token‑count boxes (session, file, total, context size) */
 #sessionTokenCount,
 #fileTokenCount,
 #totalTokenCount,
 #contextSizeBox {
-  padding: 4px 8px;
-  border-radius: 4px;
-  background-color: rgba(255,255,255,0.05);
-  border: 1px solid var(--vscode-editorWidget-border);
-  font-size: 0.85em; 
-  font-family: var(--vscode-font-family); 
-  font-weight: normal; 
-  color: var(--vscode-input-foreground);
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background-color 0.2s ease, color 0.2s ease,
-              transform 0.1s ease, box-shadow 0.2s ease;
+  padding:4px 8px;
+  border-radius:4px;
+  background-color:rgba(255,255,255,.05);
+  border:1px solid var(--vscode-editorWidget-border);
+  font-size:.85em;
+  color:var(--vscode-input-foreground);
+  text-align:center;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  transition:
+    background-color .2s ease,
+    color .2s ease,
+    transform .1s ease,
+    box-shadow .2s ease;
+}
+#contextSizeBox:hover{
+  background-color:var(--vscode-input-foreground);
+  color:var(--vscode-input-background);
+  cursor:pointer;
+  transform:translateY(-1px);
+  box-shadow:0 4px 10px rgba(0,0,0,.16);
 }
 
 
+/* ─── LL.M INFO ROWS & CONTEXT SIZE BOX ─────── */
+.llm-info-row{
+  display:flex; gap:8px;margin-top:4px;cursor:pointer;
+  flex-wrap:no-wrap;}
+.llm-info-row span:hover{color:#007acc;}
+#llmURLBox,#modelNameBox,#apiTypeBox{
+  flex:1 1 auto; min-width:fit-content; padding:.5em .8em;
+  border-radius:4px;background-color:var(--vscode-input-background);
+  border:1px solid var(--vscode-editorWidget-border); font-size:.85em;
+  color:var(--vscode-input-foreground); cursor:pointer;text-align:center;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+#llmURLBox:hover,#modelNameBox:hover,#apiTypeBox:hover{
+  background-color:var(--vscode-input-foreground);color:white;
+  transform:translateY(-1px);
+  box-shadow:0 4px 10px rgba(0,0,0,.16);}
+.refreshSvcBtn{
+  background:none;border:none;padding:.2em .3em;cursor:pointer;font-size:1.5em;
+  line-height:1;color:inherit;display:inline-flex;align-items:center;
+  justify-content:center;transition:.2s ease,transform .1s ease;}
+.refreshSvcBtn:hover{color:var(--vscode-input-foreground);
+                     transform:translateY(-1px);}
+.refreshSvcBtn:active{transform:scale(.95);}
 
-#contextSizeBox:hover {
-  background-color: var(--vscode-input-foreground);
-  cursor: pointer;
-  color: var(--vscode-input-background);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
-}
+/* ─── SERVICE STATUS CONTEXT CONTAINER ─────── */
+#serviceStatusContainer{
+  display:inline-flex; align-items:center; justify-content:center;
+  gap:8px;padding:.6em 1.6em;border-radius:999px;font-size:.95em;
+  border:1px solid var(--vscode-editorWidget-border); margin:auto;}
+#serviceStatusContainer .status-label{color:var(--vscode-input-foreground);
+                                      font-weight:600;}
+#api-status{font-weight:bold;white-space:nowrap;}
 
-.llm-info-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-  cursor: pointer;
-  flex-wrap: nowrap;
-}
-
-.llm-info-row span:hover {
-  color: #007acc;
-}
-
-#llmURLBox,
-#modelNameBox,
-#apiTypeBox {
-  flex: 1 1 auto;
-  min-width: fit-content;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background-color: var(--vscode-input-background);
-  border: 1px solid var(--vscode-editorWidget-border);
-  font-size: 0.85em;
-  color: var(--vscode-input-foreground);
-  cursor: pointer;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-#llmURLBox:hover,
-#modelNameBox:hover,
-#apiTypeBox:hover {
-  background-color: var(--vscode-input-foreground);
-  color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
-  transition: background-color 0.2s ease, color 0.2s ease,
-              transform 0.1s ease, box-shadow 0.2s ease;
-
-}
-
-
-.refreshSvcBtn {
-  background: none;
-  border: none;
-  padding: 1px 1px;
-  cursor: pointer;
-  font-size: 1.5em;
-  line-height: 1;
-  color: inherit; 
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s ease, transform 0.1s ease;
-}
-
-.refreshSvcBtn:hover {
-  color: var(--vscode-input-foreground);
-  transform: translateY(-1px);
-}
-
-.refreshSvcBtn:active {
-  transform: scale(0.95);
-}
-
-#serviceStatusContainer {
-  display: inline-flex;             
-  align-items: center;
-  justify-content: center;
-  gap: 8px;                          
-  padding: 6px 16px;                 
-  border-radius: 999px;             
-  font-size: 0.95em;
-  border: 1px solid var(--vscode-editorWidget-border); 
-  margin: 0 auto;                    
-}
-
-#serviceStatusContainer .status-label {
-  color: var(--vscode-input-foreground);
-  font-weight: 600;
-}
-
-#api-status {
-  font-weight: bold;
-  white-space: nowrap;              
-}
-
-
-/* --- Multi-file context styles --- */
-
-#contextControls {
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 4px;
-  background-color: var(--vscode-editorWidget-background);
-}
-
-.context-buttons {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.context-buttons button {
-  font-size: 0.8rem;
-  padding: 2px 6px;
-  border: 1px solid var(--vscode-button-border, var(--vscode-editorWidget-border));
-  border-radius: 3px;
-  background-color: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
-  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
-  cursor: pointer;
-}
-
-.context-buttons button:hover {
-  background-color: var(--vscode-button-hoverBackground);
-  transform: translateY(-1px);    
-  box-shadow: 0 4px 10px rgba(0,0,0,0.16);
-}
-
-/* Flash effect on click */
-.context-buttons button:active,
-.remove-file-btn:active {
-  animation: flash 0.2s;
-}
-
-@keyframes flash {
-  0%   { background-color: var(--vscode-button-hoverBackground); }
-  50%  { background-color: var(--vscode-editor-background); }
-  100% { background-color: var(--vscode-button-secondaryBackground, var(--vscode-editor-background)); }
-}
-
-/* Scroll container (shared) */
-.context-files-list {
-  max-height: 150px;
-  overflow-y: auto;
-  border-radius: 3px;
-  padding: 4px;
-  background-color: var(--vscode-editor-background);
-  font-size: 0.85rem;
-}
-
-/* Single-file list gets its own border box */
-.context-files-list.single {
-  border: 1px solid var(--vscode-editorWidget-border);
-  padding: 0; /* align with dropdown summary */
-  background-color: var(--vscode-button-secondaryBackground);
-}
-
-/* Ensure single-file entry matches dropdown summary spacing */
-.context-files-list.single .context-file-entry {
-  padding: 2px 4px;  /* same as summary */
-  margin-bottom: 0;
-  border-bottom: none;
-}
-
-/* Drag-over highlight (applies to any list container with 'drag-over') */
+/* ─── MULTI‑FILE CONTEXT STYLES ───────────── */
+#contextControls{
+  margin-top:.5rem;padding:.5rem;border:1px solid var(--vscode-editorWidget-border);
+  border-radius:4px;background-color:var(--vscode-editorWidget-background);}
+.context-buttons{display:flex; gap:.5rem;margin-bottom:.5rem;}
+.context-buttons button{
+  font-size:.8rem;padding:.2rem .6rem;border:1px solid var(--vscode-button-border,var(--vscode-editorWidget-border));
+  border-radius:3px;background-color:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));
+  color:var(--vscode-button-secondaryForeground,var(--vscode-editor-foreground));cursor:pointer;}
+.context-buttons button:hover{
+  background-color:var(--vscode-button-hoverBackground);transform:translateY(-1px);
+  box-shadow:0 4px 10px rgba(0,0,0,.16);}
+@keyframes flash{
+  0%{background-color:var(--vscode-button-hoverBackground);}
+  50%{background-color:var(--vscode-editor-background);}
+  100%{background-color:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));}}
+.context-buttons button:active,.remove-file-btn:active{animation:flash .2s;}
+/* Scroll container */
+.context-files-list{
+  max-height:150px; overflow-y:auto;border-radius:3px;padding:.4rem;
+  background-color:var(--vscode-editor-background);font-size:.85rem;}
+.context-files-list.single{
+  border:1px solid var(--vscode-editorWidget-border);
+  padding:0;background-color:var(--vscode-button-secondaryBackground);}
+.context-files-list.single .context-file-entry{
+  padding:.2rem .4rem;margin-bottom:0;border-bottom:none;}
+/* Drag‑over highlight */
 .context-files-list.drag-over,
-.context-files-list.single.drag-over {
-  border: 2px dashed var(--vscode-focusBorder);
-  background-color: var(--vscode-editorHoverWidget-background);
-}
+.context-files-list.single.drag-over{
+  border:2px dashed var(--vscode-focusBorder);
+  background-color:var(--vscode-editorHoverWidget-background);}
+.context-file-entry{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:.2rem .4rem;margin-bottom:.2rem;border-bottom:1px solid var(--vscode-editorWidget-border);}
+.context-file-entry:last-child{border-bottom:none;}
+.context-file-entry .file-info{display:inline;}
+.context-file-entry .filename{
+  font-weight:600;margin-right:.4rem;}
+.context-over-limit{
+  color:orange;font-weight:600;margin-right:.4rem;}
 
-.context-file-entry {
-  display: flex;
-  justify-content: space-between; /* left info vs. right X */
-  align-items: center;
-  padding: 2px 4px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--vscode-editorWidget-border);
-}
-
-.context-file-entry:last-child {
-  border-bottom: none;
-}
-
-/* left side: filename + language/tokens */
-.context-file-entry .file-info {
-  display: inline;
-}
-
-.context-file-entry .filename {
-  font-weight: 600; /* bold filename */
-  margin-right: 4px; /* small spacing before [language] */
-}
-
-/* highlight when tokens exceed context size */
-.context-over-limit {
-  color: orange; /* or var(--vscode-editorWarning-foreground) */
-  font-weight: 600;
-  margin-right: 4px;
-}
-
-/* --- Dropdown container gets a border box --- */
-details.context-files-dropdown {
-  border: 1px solid var(--vscode-editorWidget-border);
-  border-radius: 3px;
-  background-color: var(--vscode-editor-background);   
-}
-
-
-details.context-files-dropdown[open] > div.context-files-list {
-  background-color: var(--vscode-editor-background);   /* same as container, keeps it light */
-}
-
-/* Summary line has a separator from contents */
-details.context-files-dropdown > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px;
-  margin-bottom: 0; /* remove extra margin to align with border box */
-  border-bottom: 1px solid var(--vscode-editorWidget-border);
-
-  /* Darker background for the header (change this hex or use a custom variable) */
-  background-color: var(--vscode-button-secondaryBackground);
-
-  font-size: 0.85rem;
-
-  /* Hide native marker to avoid layout conflicts with flex */
-  list-style: none;
-}
-details.context-files-dropdown > summary::-webkit-details-marker {
-  display: none;
-}
-
-/* Custom caret attached to the label to avoid flex-item conflicts */
-details.context-files-dropdown > summary .context-summary-label {
-  font-weight: 600;
-  position: relative;
-  padding-left: 18px;            /* room for caret */
-}
-details.context-files-dropdown > summary .context-summary-label::before {
-  content: '▸';                  /* closed state */
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  transition: transform 150ms ease;
-  color: var(--vscode-editor-foreground);
-}
-details.context-files-dropdown[open] > summary .context-summary-label::before {
-  content: '▾';                  /* open state */
-}
-
-/* Remove-all button on the right */
-details.context-files-dropdown > summary .remove-file-btn {
-  margin-left: 8px;
-  position: relative;
-  z-index: 1;
-}
-
-.remove-file-btn {
-  background: transparent;
-  border: none;
-  color: var(--vscode-errorForeground);
-  cursor: pointer;
-  font-size: 0.9rem;
-  padding: 0 4px;
-}
-.remove-file-btn:hover {
-  background-color: var(--vscode-editorHoverWidget-background);
-  border-radius: 3px;
-}
-
-#fileContextHeader {
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: var(--vscode-editor-foreground);
-}
+/* ─── DROPDOWN CONTAINER ───────────────────── */
+details.context-files-dropdown{
+  border:1px solid var(--vscode-editorWidget-border);
+  border-radius:3px;background-color:var(--vscode-editor-background);}
+details.context-files-dropdown[open] > div.context-files-list{
+  background-color:var(--vscode-editor-background);}
+details.context-files-dropdown > summary{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:.2rem .4rem;margin-bottom:0;border-bottom:1px solid var(--vscode-editorWidget-border);
+  background-color:var(--vscode-button-secondaryBackground);font-size:.85rem;}
+details.context-files-dropdown > summary::-webkit-details-marker{display:none;}
+details.context-files-dropdown > summary .context-summary-label{
+  font-weight:600;position:relative;padding-left:1.2rem;}
+details.context-files-dropdown > summary .context-summary-label::before{
+  content:'▸';position:absolute;left:0;top:50%;
+  transform:translateY(-50%);transition:.15s ease;color:var(--vscode-editor-foreground);}
+details.context-files-dropdown[open] > summary .context-summary-label::before{
+  content:'▾';}
+details.context-files-dropdown > summary .remove-file-btn{
+  margin-left:.8rem;position:relative;z-index:1;}
+.remove-file-btn{
+  background:transparent;border:none;color:var(--vscode-errorForeground);
+  cursor:pointer;font-size:.9rem;padding:0 .4rem;}
+.remove-file-btn:hover{
+  background-color:var(--vscode-editorHoverWidget-background);border-radius:3px;}
+#fileContextHeader{margin-bottom:8px;font-size:13px;
+                   color:var(--vscode-editor-foreground);}

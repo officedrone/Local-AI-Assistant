@@ -70,10 +70,10 @@ export function getWebviewContent(
     </div>
 
     <div id="sessionTokenContainer">
-      <div class="tokenTitle">Session Token Usage</div>
+      <div class="tokenTitle">Session Tokens</div>
       <div class="tokenRow">
         <div class="tokenItem">
-          Chat: <span id="sessionTokenCount">${getSessionTokenCount()}</span>
+          Chat/Think: <span id="sessionTokenCount">${getSessionTokenCount()}</span>
         </div>
         <div class="tokenItem">
           Files: <span id="fileTokenCount">${getSpentFileContextTokens()}</span>

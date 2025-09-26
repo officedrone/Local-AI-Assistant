@@ -42,7 +42,7 @@ export function setupMessageRouter(vscode, contextSize) {
             if (state.assistantElem) {
               const body = state.assistantElem.querySelector('.markdown-body');
               body.innerHTML = `<strong>Assistant:</strong><i><br/>
-                <span class="status-reason">&lt; LLM is taking longer than expected to reply &gt;</span>`;
+                <span class="status-reason">&lt; LLM is taking longer than expected to reply (processing large context maybe?) &gt;</span>`;
             }
           }
         }, 10000);
@@ -62,20 +62,34 @@ export function setupMessageRouter(vscode, contextSize) {
         state.assistantElem.classList.remove('pulsing');
         let chunk = message || '';
 
-        // Detect start of <think> or <seed:think>
-        if (chunk.includes('<think>') || chunk.includes('<seed:think>')) {
+        // Detect start of <think>, <seed:think>, or [THINK]
+        if (
+          chunk.includes('<think>') ||
+          chunk.includes('<seed:think>') ||
+          chunk.includes('[THINK]')
+        ) {
           inThinkingBlock = true;
           thinkingBuffer = '';
-          chunk = chunk.replace('<think>', '').replace('<seed:think>', '');
-
-          // Switch bubble to thinking mode only now
+          // Remove any of the start markers
+          chunk = chunk
+            .replace('<think>', '')
+            .replace('<seed:think>', '')
+            .replace('[THINK]', '');
           state.assistantElem.classList.add('thinking');
         }
 
-        // Detect end of </think> or </seed:think>
-        if (chunk.includes('</think>') || chunk.includes('</seed:think>')) {
+        // Detect end of </think>, </seed:think>, or [/THINK]
+        if (
+          chunk.includes('</think>') ||
+          chunk.includes('</seed:think>') ||
+          chunk.includes('[/THINK]')
+        ) {
           inThinkingBlock = false;
-          chunk = chunk.replace('</think>', '').replace('</seed:think>', '');
+          // Remove any of the end markers
+          chunk = chunk
+            .replace('</think>', '')
+            .replace('</seed:think>', '')
+            .replace('[/THINK]', '');
           thinkingBuffer = '';
 
           // Remove thinking or pulsing style
@@ -108,7 +122,9 @@ export function setupMessageRouter(vscode, contextSize) {
             // Track whether user is at bottom
             contentEl.dataset.autoScroll = 'true';
             contentEl.addEventListener('scroll', () => {
-              const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
+              const atBottom =
+                contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight <
+                20;
               contentEl.dataset.autoScroll = atBottom.toString();
             });
           }
