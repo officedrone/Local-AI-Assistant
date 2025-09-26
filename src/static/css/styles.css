@@ -46,50 +46,123 @@ body{
 }
 
 /* ─── BUBBLE STYLES ─────────────────────────── */
-.message{ position:relative; background-clip:padding-box; display:inline-block;
-          max-width:80%; padding:10px 14px; border-radius:12px; line-height:1.4;
-          word-wrap:break-word; font-size:1rem; border:none;
-          box-shadow:inset 0 0 0 1px var(--vscode-editorWidget-border),0 2px 8px rgba(0,0,0,.15);
-          transition:.2s ease; animation:slideUp .4s ease-out;}
-.message:hover{ transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.12),inset 0 0 0 1px var(--vscode-editorWidget-border);}
-.message::after{content:""; position:absolute; inset:0; border-radius:inherit;
-                pointer-events:none; box-shadow:0 0 0 0 transparent; transition:.3s ease;}
-.message:hover::after{box-shadow:0 0 8px var(--btn-hover-bg);}
-
-@keyframes slideUp{
-  from{transform:translateY(10px); opacity:0;} to{transform:translateY(0); opacity:1;}
+.message {
+  position: relative;
+  background-clip: padding-box;
+  display: inline-block;
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  font-size: 1rem;
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--vscode-editorWidget-border),
+              0 2px 8px rgba(0,0,0,0.15);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  animation: slideUp 0.4s ease-out;
+}
+message:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12),
+              inset 0 0 0 1px var(--vscode-editorWidget-border);
+}
+.message::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 0.3s ease;
+}
+.message:hover::after {
+  box-shadow: 0 0 8px var(--btn-hover-bg);
 }
 
-/* ─── USER / ASSISTANT BUBBLES ────────────────── */
-.user-message{ align-self:flex-end; background:var(--user-bg);
-              color:var(--user-text); text-align:left;}
-.user-message:hover{background:linear-gradient(to right,var(--btn-hover-bg),var(--user-bg));}
 
-.ai-message{
-  align-self:flex-start; background:var(--assistant-bg); color:var(--assistant-text);
-  text-align:left; max-width:100%; width:100%; display:block;
-  box-sizing:border-box;}
-.ai-message:hover{background:linear-gradient(to left,var(--code-bg),var(--assistant-bg));}
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 
-/* ─── THINKING STATE ─────────────────────────── */
-.thinking,.pulsing{
-  opacity:.85; font-style:italic; animation:pulse 1.5s infinite ease-in-out;
-  background:repeating-linear-gradient(45deg,var(--assistant-bg),
-          var(--assistant-bg)10px,var(--code-bg)10px,var(--code-bg)20px);}
-@keyframes pulse{0%,100%{opacity:.6;}50%{opacity:1;}}
-.message.ai-message.thinking .markdown-body{
-  display:flex; flex-direction:column; max-height:12em;}
-.message.ai-message.thinking .thinking-header{flex:0 0 auto;font-weight:bold;padding:.25rem;}
-.message.ai-message.thinking .thinking-content{flex:1 1 auto;overflow-y:auto;padding:.25rem;}
+.user-message {
+  align-self: flex-end;
+  background: var(--user-bg);
+  color: var(--user-text);
+  text-align: left;
+}
+.user-message:hover {
+  background: linear-gradient(to right, var(--btn-hover-bg), var(--user-bg));
+}
 
-/* ─── STATUS BUBBLES ─────────────────────────── */
-.ai-message.status-aborted{
-  background:linear-gradient(to left,#fef6f6,#f9eaea); border-left:4px solid #d9534f;}
-.ai-message.status-error{
-  background:linear-gradient(to left,#fff8f0,#fdf1e6); border-left:4px solid #f0ad4e;}
-.ai-message .status-reason{
-  display:block; font-size:.9rem; font-style:italic; opacity:.85;
-  margin-top:4px;}
+
+.ai-message {
+  align-self: flex-start;
+  background: var(--assistant-bg);
+  color: var(--assistant-text);
+  text-align: left;
+  /* Override the base .message width limit */
+  max-width: 100%;
+  width: 100%; /* ensures it fills the available container space */
+  display: block; /* so width applies fully */
+  box-sizing: border-box; /* padding stays inside the width */
+}
+
+.ai-message:hover {
+  background: linear-gradient(to left, var(--code-bg), var(--assistant-bg));
+}
+
+
+.thinking {
+  opacity: 0.85;
+  font-style: italic;
+  animation: pulse 1.5s infinite ease-in-out;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--assistant-bg),
+    var(--assistant-bg) 10px,
+    var(--code-bg) 10px,
+    var(--code-bg) 20px
+  );
+}
+.pulsing {
+  opacity: 0.85;
+  font-style: italic;
+  animation: pulse 1.5s infinite ease-in-out;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--assistant-bg),
+    var(--assistant-bg) 10px,
+    var(--code-bg) 10px,
+    var(--code-bg) 20px
+  );
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Limit height and auto-scroll the thinking bubble's content */
+.message.ai-message.thinking .markdown-body {
+  display: flex;
+  flex-direction: column;
+  max-height: 12em; 
+}
+
+.message.ai-message.thinking .thinking-header {
+  flex: 0 0 auto; /* fixed height */
+  font-weight: bold;
+  padding: 0.25rem;
+}
+
+.message.ai-message.thinking .thinking-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
 
 /* ─── CODE BLOCKS & INLINE CODE ────────────── */
 pre{background:var(--code-bg); border:1px solid var(--code-border);

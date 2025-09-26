@@ -42,7 +42,7 @@ export function setupMessageRouter(vscode, contextSize) {
             if (state.assistantElem) {
               const body = state.assistantElem.querySelector('.markdown-body');
               body.innerHTML = `<strong>Assistant:</strong><i><br/>
-                <span class="status-reason">&lt; LLM is taking longer than expected to reply (processing large context maybe?) &gt;</span>`;
+                <span class="status-reason">&lt; LLM is taking a bit longer than expected to reply (processing large context maybe?) &gt;</span>`;
             }
           }
         }, 10000);
@@ -166,16 +166,20 @@ export function setupMessageRouter(vscode, contextSize) {
           const body = state.assistantElem.querySelector('.markdown-body');
 
           if (!hasReceivedChunk) {
-            // No output at all yet — replace placeholder
             body.innerHTML = `<strong>Assistant:</strong><br/>${ev.data.reason}`;
           } else if (inThinkingBlock) {
             const rendered = renderMd(thinkingBuffer || '');
             body.innerHTML = `<strong>Assistant:</strong><br/>${rendered}`;
           }
-          // Always clear thinking style if present
-          state.assistantElem.classList.remove('thinking');
+
+          // Clear transient visual states
+          state.assistantElem.classList.remove('thinking', 'pulsing');
+
+          // Apply your aborted status class
+          state.assistantElem.classList.add('status-aborted');
         }
-        // Reset flags/buffer regardless of whether we had an element
+
+        // Reset flags/buffer
         inThinkingBlock = false;
         thinkingBuffer = '';
         hasReceivedChunk = false;
@@ -184,6 +188,8 @@ export function setupMessageRouter(vscode, contextSize) {
         document.getElementById('sendButton').textContent = 'Send';
         break;
       }
+
+
 
 
 
@@ -204,6 +210,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const state = getStreamingState();
 
         if (state.assistantElem) {
+          state.assistantElem.classList.remove('thinking', 'pulsing');
           // If nothing was streamed, replace the placeholder with a clear message
           if (!hasReceivedChunk) {
             const body = state.assistantElem.querySelector('.markdown-body');
@@ -326,26 +333,35 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
 
       case 'stopStream': {
-        if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
-
-        // Reset any streaming state
-        inThinkingBlock = false;
-        thinkingBuffer = '';
-        hasReceivedChunk = false;
-
-        // If there’s an active assistant bubble, remove thinking/pulsing styles
-        const state = getStreamingState();
-        if (state.assistantElem) {
-          state.assistantElem.classList.remove('thinking', 'pulsing');
+        if (noChunkTimer) { 
+          clearTimeout(noChunkTimer); 
+          noChunkTimer = null; 
         }
 
-        // Mark streaming as stopped
+        const state = getStreamingState();
+        if (state.assistantElem) {
+          // Remove visual states and any placeholder text
+          state.assistantElem.classList.remove('thinking', 'pulsing');
+
+          // If no chunks were received, update the message to reflect user stopping
+          if (!hasReceivedChunk) {
+            const body = state.assistantElem.querySelector('.markdown-body');
+            if (body) {
+              body.innerHTML = `<strong>Assistant:</strong><i><br/>
+                <span class="status-reason">&lt; Message Aborted by User &gt;</span>`;
+            }
+          }
+        }
+
+        // Reset state
         setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
 
         // Reset send button text
         document.getElementById('sendButton').textContent = 'Send';
-        break;
+        scrollToBottomImmediate(true);
       }
+
+
 
       //sendToAI loopback
       case 'sendToAI': {
