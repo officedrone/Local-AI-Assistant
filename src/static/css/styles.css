@@ -23,7 +23,7 @@ html, body {
 /* ─── PAGE & BUBBLES ─────────────────────────── */
 body{
   background:var(--vscode-editor-background);
-  color:var(--vscode-editor-foreground); padding:20px;
+  color:var(--vscode-editor-foreground); padding:10px;
 }
 .main-panel{ width:100%; max-width:800px; margin:auto;
              display:flex; flex-direction:column; gap:10px;}
@@ -232,7 +232,7 @@ button:active{transform:scale(.97);}
   width:16px;height:16px;margin:0;accent-color:var(--btn-bg);cursor:pointer;}
 
 /* ─── LAYOUT STRUCTURE ───────────────────────── */
-.session-header{display:flex; align-items:center; gap:12px;}
+.session-header{display:flex; align-items:center; justify-content: space-between;  gap:6px;}
 .button-stack{height:100%; display:flex; flex-direction:column;
               align-items:flex-end; gap:6px;}
 #session-controls{
@@ -246,6 +246,7 @@ button:active{transform:scale(.97);}
 /* ─── SESSION TOKENS PANEL (Scoreboard) ───── */
 #sessionTokenContainer {
   display:flex;
+  align-items: center;  
   align-items:baseline;          /* text‑baseline alignment */
   justify-content:space-between;
   gap:8px;
@@ -254,7 +255,7 @@ button:active{transform:scale(.97);}
   white-space:nor
 w;
   padding:8px 14px;
-  background:var(--vscode-input-background);
+  background-color:var(--vscode-editorWidget-background);
   border:1px solid var(--vscode-editorWidget-border);
   border-radius:4px;
   font-family:var(--vscode-font-family);
@@ -290,11 +291,28 @@ w;
 /* token‑count boxes (session, file, total, context size) */
 #sessionTokenCount,
 #fileTokenCount,
-#totalTokenCount,
+#totalTokenCount
+ {
+  padding:4px 8px;
+  border-radius:4px;
+  background-color: var(--vscode-editorWidget-background);
+  border:1px solid var(--vscode-editorWidget-border);
+  font-size:.85em;
+  color:var(--vscode-input-foreground);
+  text-align:center;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  transition:
+    background-color .2s ease,
+    color .2s ease,
+    transform .1s ease,
+    box-shadow .2s ease;
+}
 #contextSizeBox {
   padding:4px 8px;
   border-radius:4px;
-  background-color:rgba(255,255,255,.05);
+  background-color: var(--vscode-input-background);
   border:1px solid var(--vscode-editorWidget-border);
   font-size:.85em;
   color:var(--vscode-input-foreground);
@@ -317,15 +335,40 @@ w;
 }
 
 
-/* ─── LL.M INFO ROWS & CONTEXT SIZE BOX ─────── */
+/* ─── LLM INFO ROWS & CONTEXT SIZE BOX ─────── */
+/* Make LLM controls scroll exactly like session tokens */
 .llm-info-row{
-  display:flex; gap:8px;margin-top:4px;cursor:pointer;
-  flex-wrap:no-wrap;}
-.llm-info-row span:hover{color:#007acc;}
+  display:flex;
+  gap:8px;
+  cursor:pointer;
+  align-items:baseline;    /* match session tokens baseline alignment */
+  flex-wrap:nowrap;        /* prevent wrapping so horizontal scroll appears */
+  overflow-x:auto;         /* show scrollbar when content overflows */
+  -webkit-overflow-scrolling:touch;
+  padding:8px 14px;        /* match session tokens padding */
+  border-radius:4px;
+  border:1px solid var(--vscode-editorWidget-border);
+  color:var(--vscode-input-foreground);
+  text-align:center;
+  white-space:nowrap;      /* keep children on one line for scrolling */
+  /* removed overflow:hidden and text-overflow:ellipsis so scrollbar can appear */
+  transition:
+    background-color .2s ease,
+    color .2s ease,
+    transform .1s ease,
+    box-shadow .2s ease;
+}
+
+/* Allow flex children to shrink properly so the container can produce a scrollbar */
+.llm-info-row > * {
+  min-width: 0;
+  flex: 0 0 auto; /* use intrinsic width unless you explicitly want them to expand */
+}
+
 #llmURLBox,#modelNameBox,#apiTypeBox{
-  flex:1 1 auto; min-width:fit-content; padding:.5em .8em;
+  flex:1 1 auto; min-width:fit-content; padding:.2em .4em;
   border-radius:4px;background-color:var(--vscode-input-background);
-  border:1px solid var(--vscode-editorWidget-border); font-size:.85em;
+  border:1px solid var(--vscode-editorWidget-border); font-size:.9em;
   color:var(--vscode-input-foreground); cursor:pointer;text-align:center;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 #llmURLBox:hover,#modelNameBox:hover,#apiTypeBox:hover{
@@ -333,8 +376,8 @@ w;
   transform:translateY(-1px);
   box-shadow:0 4px 10px rgba(0,0,0,.16);}
 .refreshSvcBtn{
-  background:none;border:none;padding:.2em .3em;cursor:pointer;font-size:1.5em;
-  line-height:1;color:inherit;display:inline-flex;align-items:center;
+  background:none;border:1px solid var(--vscode-editorWidget-border);border-radius:4px; cursor:pointer;font-size:1.1em;
+  line-height:1;color:inherit;display:inline-flex;align-items:center;background-color:var(--vscode-input-background);
   justify-content:center;transition:.2s ease,transform .1s ease;}
 .refreshSvcBtn:hover{color:var(--vscode-input-foreground);
                      transform:translateY(-1px);}
@@ -342,12 +385,17 @@ w;
 
 /* ─── SERVICE STATUS CONTEXT CONTAINER ─────── */
 #serviceStatusContainer{
-  display:inline-flex; align-items:center; justify-content:center;
-  gap:8px;padding:.6em 1.6em;border-radius:999px;font-size:.95em;
-  border:1px solid var(--vscode-editorWidget-border); margin:auto;}
+  display:inline-flex; align-items:center; justify-content: right;
+  gap:8px;padding:.5em 1.4em;border:1px solid var(--vscode-editorWidget-border);border-radius:4px;font-size:1.05em;line-height: 1;
+   margin:0;}
 #serviceStatusContainer .status-label{color:var(--vscode-input-foreground);
                                       font-weight:600;}
 #api-status{font-weight:bold;white-space:nowrap;}
+#serviceStatusContainer > * {
+  align-self: center;
+  line-height: 1;
+  vertical-align: middle;
+}
 
 /* ─── MULTI‑FILE CONTEXT STYLES ───────────── */
 #contextControls{
@@ -356,7 +404,7 @@ w;
 .context-buttons{display:flex; gap:.5rem;margin-bottom:.5rem;}
 .context-buttons button{
   font-size:.8rem;padding:.2rem .6rem;border:1px solid var(--vscode-button-border,var(--vscode-editorWidget-border));
-  border-radius:3px;background-color:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));
+  border-radius:4px;background-color:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));
   color:var(--vscode-button-secondaryForeground,var(--vscode-editor-foreground));cursor:pointer;}
 .context-buttons button:hover{
   background-color:var(--vscode-button-hoverBackground);transform:translateY(-1px);
@@ -368,7 +416,7 @@ w;
 .context-buttons button:active,.remove-file-btn:active{animation:flash .2s;}
 /* Scroll container */
 .context-files-list{
-  max-height:150px; overflow-y:auto;border-radius:3px;padding:.4rem;
+  max-height:150px; overflow-y:auto;border-radius:4px;padding:.4rem;
   background-color:var(--vscode-editor-background);font-size:.85rem;}
 .context-files-list.single{
   border:1px solid var(--vscode-editorWidget-border);
@@ -393,7 +441,7 @@ w;
 /* ─── DROPDOWN CONTAINER ───────────────────── */
 details.context-files-dropdown{
   border:1px solid var(--vscode-editorWidget-border);
-  border-radius:3px;background-color:var(--vscode-editor-background);}
+  border-radius:4px;background-color:var(--vscode-editor-background);}
 details.context-files-dropdown[open] > div.context-files-list{
   background-color:var(--vscode-editor-background);}
 details.context-files-dropdown > summary{
@@ -414,6 +462,6 @@ details.context-files-dropdown > summary .remove-file-btn{
   background:transparent;border:none;color:var(--vscode-errorForeground);
   cursor:pointer;font-size:.9rem;padding:0 .4rem;}
 .remove-file-btn:hover{
-  background-color:var(--vscode-editorHoverWidget-background);border-radius:3px;}
+  background-color:var(--vscode-editorHoverWidget-background);border-radius:4px;}
 #fileContextHeader{margin-bottom:8px;font-size:13px;
                    color:var(--vscode-editor-foreground);}

@@ -59,18 +59,18 @@ export function getWebviewContent(
       <div id="serviceStatusContainer">
         <span class="status-label">LLM Service Status:</span>
         <span id="api-status"></span>
+        <button id="refreshSvcBtn" class="refreshSvcBtn" title="Refresh URL / API / Model Status">⟳</button>
       </div>
     </div>
 
     <div class="llm-info-row">
-      <span id="llmURLBox" title="Click to set LLM URL">URL: ${displayUrl}</span>
-      <span id="apiTypeBox" title="Select API Type">API: ${apiType}</span>
-      <span id="modelNameBox" title="Click to change model">Model: ${modelName}</span>
-      <button id="refreshSvcBtn" class="refreshSvcBtn" title="Refresh URL / API / Model Status">⟳</button>
+      <b>URL: </b><span id="llmURLBox" title="Click to set LLM URL">${displayUrl}</span>
+      <b>API: </b><span id="apiTypeBox" title="Select API Type">${apiType}</span>
+      <b>Model: </b><span id="modelNameBox" title="Click to change model">${modelName}</span>
     </div>
 
     <div id="sessionTokenContainer">
-      <div class="tokenTitle">Session Tokens</div>
+      <div class="tokenTitle">Session Tokens:</div>
       <div class="tokenRow">
         <div class="tokenItem">
           Chat/Think: <span id="sessionTokenCount">${getSessionTokenCount()}</span>

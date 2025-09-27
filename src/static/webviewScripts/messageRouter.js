@@ -42,7 +42,7 @@ export function setupMessageRouter(vscode, contextSize) {
             if (state.assistantElem) {
               const body = state.assistantElem.querySelector('.markdown-body');
               body.innerHTML = `<strong>Assistant:</strong><i><br/>
-                <span class="status-reason">&lt; LLM is taking a bit longer than expected to reply (processing large context maybe?) &gt;</span>`;
+                <span class="status-reason">&lt; LLM is taking a bit longer than expected to reply. This is normal if the model is just being loaded, or if processing large context that was just added.) &gt;</span>`;
             }
           }
         }, 10000);
@@ -268,7 +268,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const modelSpan = document.getElementById('modelNameBox');
         if (modelSpan) {
           const displayName = ev.data.value?.trim() || 'None';
-          modelSpan.textContent = 'Model: ' + displayName;
+          modelSpan.textContent =  displayName;
           modelSpan.onclick = () => {
             vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectModel' });
           };
@@ -280,7 +280,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const apiTypeSpan = document.getElementById('apiTypeBox');
         if (apiTypeSpan) {
           const displayName = ev.data.value?.trim() || 'None';
-          apiTypeSpan.textContent = 'API: ' + displayName;
+          apiTypeSpan.textContent = displayName;
           apiTypeSpan.onclick = () => {
             vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectApiType' });
           };
@@ -292,7 +292,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const urlSpan = document.getElementById('llmURLBox');
         if (urlSpan) {
           const displayUrl = ev.data.value?.trim() || 'None';
-          urlSpan.textContent = 'URL: ' + displayUrl;
+          urlSpan.textContent =  displayUrl;
           urlSpan.onclick = () => {
             vscode.postMessage({ type: 'invokeCommand', command: 'extension.setApiURL' });
           };
