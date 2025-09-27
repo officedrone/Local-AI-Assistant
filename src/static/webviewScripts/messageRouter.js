@@ -42,7 +42,7 @@ export function setupMessageRouter(vscode, contextSize) {
             if (state.assistantElem) {
               const body = state.assistantElem.querySelector('.markdown-body');
               body.innerHTML = `<strong>Assistant:</strong><i><br/>
-                <span class="status-reason">&lt; LLM is taking longer than expected to reply &gt;</span>`;
+                <span class="status-reason">&lt; LLM is taking a bit longer than expected to reply. This is normal if the model is just being loaded, or if processing large context that was just added.) &gt;</span>`;
             }
           }
         }, 10000);
@@ -62,20 +62,34 @@ export function setupMessageRouter(vscode, contextSize) {
         state.assistantElem.classList.remove('pulsing');
         let chunk = message || '';
 
-        // Detect start of <think> or <seed:think>
-        if (chunk.includes('<think>') || chunk.includes('<seed:think>')) {
+        // Detect start of <think>, <seed:think>, or [THINK]
+        if (
+          chunk.includes('<think>') ||
+          chunk.includes('<seed:think>') ||
+          chunk.includes('[THINK]')
+        ) {
           inThinkingBlock = true;
           thinkingBuffer = '';
-          chunk = chunk.replace('<think>', '').replace('<seed:think>', '');
-
-          // Switch bubble to thinking mode only now
+          // Remove any of the start markers
+          chunk = chunk
+            .replace('<think>', '')
+            .replace('<seed:think>', '')
+            .replace('[THINK]', '');
           state.assistantElem.classList.add('thinking');
         }
 
-        // Detect end of </think> or </seed:think>
-        if (chunk.includes('</think>') || chunk.includes('</seed:think>')) {
+        // Detect end of </think>, </seed:think>, or [/THINK]
+        if (
+          chunk.includes('</think>') ||
+          chunk.includes('</seed:think>') ||
+          chunk.includes('[/THINK]')
+        ) {
           inThinkingBlock = false;
-          chunk = chunk.replace('</think>', '').replace('</seed:think>', '');
+          // Remove any of the end markers
+          chunk = chunk
+            .replace('</think>', '')
+            .replace('</seed:think>', '')
+            .replace('[/THINK]', '');
           thinkingBuffer = '';
 
           // Remove thinking or pulsing style
@@ -108,7 +122,9 @@ export function setupMessageRouter(vscode, contextSize) {
             // Track whether user is at bottom
             contentEl.dataset.autoScroll = 'true';
             contentEl.addEventListener('scroll', () => {
-              const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
+              const atBottom =
+                contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight <
+                20;
               contentEl.dataset.autoScroll = atBottom.toString();
             });
           }
@@ -150,16 +166,20 @@ export function setupMessageRouter(vscode, contextSize) {
           const body = state.assistantElem.querySelector('.markdown-body');
 
           if (!hasReceivedChunk) {
-            // No output at all yet — replace placeholder
             body.innerHTML = `<strong>Assistant:</strong><br/>${ev.data.reason}`;
           } else if (inThinkingBlock) {
             const rendered = renderMd(thinkingBuffer || '');
             body.innerHTML = `<strong>Assistant:</strong><br/>${rendered}`;
           }
-          // Always clear thinking style if present
-          state.assistantElem.classList.remove('thinking');
+
+          // Clear transient visual states
+          state.assistantElem.classList.remove('thinking', 'pulsing');
+
+          // Apply your aborted status class
+          state.assistantElem.classList.add('status-aborted');
         }
-        // Reset flags/buffer regardless of whether we had an element
+
+        // Reset flags/buffer
         inThinkingBlock = false;
         thinkingBuffer = '';
         hasReceivedChunk = false;
@@ -168,6 +188,8 @@ export function setupMessageRouter(vscode, contextSize) {
         document.getElementById('sendButton').textContent = 'Send';
         break;
       }
+
+
 
 
 
@@ -188,6 +210,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const state = getStreamingState();
 
         if (state.assistantElem) {
+          state.assistantElem.classList.remove('thinking', 'pulsing');
           // If nothing was streamed, replace the placeholder with a clear message
           if (!hasReceivedChunk) {
             const body = state.assistantElem.querySelector('.markdown-body');
@@ -245,7 +268,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const modelSpan = document.getElementById('modelNameBox');
         if (modelSpan) {
           const displayName = ev.data.value?.trim() || 'None';
-          modelSpan.textContent = 'Model: ' + displayName;
+          modelSpan.textContent =  displayName;
           modelSpan.onclick = () => {
             vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectModel' });
           };
@@ -257,7 +280,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const apiTypeSpan = document.getElementById('apiTypeBox');
         if (apiTypeSpan) {
           const displayName = ev.data.value?.trim() || 'None';
-          apiTypeSpan.textContent = 'API: ' + displayName;
+          apiTypeSpan.textContent = displayName;
           apiTypeSpan.onclick = () => {
             vscode.postMessage({ type: 'invokeCommand', command: 'extension.selectApiType' });
           };
@@ -269,7 +292,7 @@ export function setupMessageRouter(vscode, contextSize) {
         const urlSpan = document.getElementById('llmURLBox');
         if (urlSpan) {
           const displayUrl = ev.data.value?.trim() || 'None';
-          urlSpan.textContent = 'URL: ' + displayUrl;
+          urlSpan.textContent =  displayUrl;
           urlSpan.onclick = () => {
             vscode.postMessage({ type: 'invokeCommand', command: 'extension.setApiURL' });
           };
@@ -310,26 +333,35 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
 
       case 'stopStream': {
-        if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
-
-        // Reset any streaming state
-        inThinkingBlock = false;
-        thinkingBuffer = '';
-        hasReceivedChunk = false;
-
-        // If there’s an active assistant bubble, remove thinking/pulsing styles
-        const state = getStreamingState();
-        if (state.assistantElem) {
-          state.assistantElem.classList.remove('thinking', 'pulsing');
+        if (noChunkTimer) { 
+          clearTimeout(noChunkTimer); 
+          noChunkTimer = null; 
         }
 
-        // Mark streaming as stopped
+        const state = getStreamingState();
+        if (state.assistantElem) {
+          // Remove visual states and any placeholder text
+          state.assistantElem.classList.remove('thinking', 'pulsing');
+
+          // If no chunks were received, update the message to reflect user stopping
+          if (!hasReceivedChunk) {
+            const body = state.assistantElem.querySelector('.markdown-body');
+            if (body) {
+              body.innerHTML = `<strong>Assistant:</strong><i><br/>
+                <span class="status-reason">&lt; Message Aborted by User &gt;</span>`;
+            }
+          }
+        }
+
+        // Reset state
         setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
 
         // Reset send button text
         document.getElementById('sendButton').textContent = 'Send';
-        break;
+        scrollToBottomImmediate(true);
       }
+
+
 
       //sendToAI loopback
       case 'sendToAI': {

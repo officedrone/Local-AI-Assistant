@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.0.25 – More Multi-file context implementation
+
+- ADD: Support for [THINK] [/THINK] reasoning
+- UPDATE: Session tokens section (Title, Think addition)
+- UPDATE: If model response takes longer than 10 secs, indicate it may be due to context processing.
+- UPDATE: Rework of styles.css to reduce spaghetti and overall size by 30/40%
+
 ## 0.0.24 – More Multi-file context implementation
 
 - FIX: Fix auto-added file context tokens not being counted on first turn

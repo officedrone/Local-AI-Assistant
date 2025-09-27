@@ -15,8 +15,9 @@ The extension must be connected to your LLM before you can use it. Follow the st
 1. Install an LLM service provider such as [LM Studio](https://lmstudio.ai/) if you haven't already
 2. Start the servce and host your model on the network
 3. Install the extension in your VS Code
-4. From the main UI, set up the URL, API Type (OpenAPI-compatible vs Ollama), and the model you want to use.
-5. (Optional) Add an API key or specify a model if your service requires them
+4. Launch the extension from status bar button (bottom left) or by using the keyboard shortcut CTRL + ALT + SHIFT + C
+5. From the main UI, set up the URL, API Type (OpenAPI-compatible vs Ollama), and the model you want to use.
+6. (Optional) Add an API key or specify a model if your service requires them
 
    ![URL setup demo](./media/readme-setup.gif)
 
