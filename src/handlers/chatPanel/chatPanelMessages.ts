@@ -11,6 +11,20 @@ import {
   getContextFiles
 } from './chatPanelContext';
 
+
+//Agent imports
+import { handleEditMessage } from '../agent/agentToolsVSFiles';
+import { handleToggleCapability, sendCapabilities, canEditFiles } from '../agent/agentToolsCapabilityMgr';
+import { dispatchToolCall } from '../agent/agentToolsIndex';
+
+
+import { chatPrompt } from '../../static/prompts';
+
+
+
+
+
+//Token Count imports
 import {
   countMessageTokens,
   countTextTokens,
@@ -22,7 +36,11 @@ import {
   setStreamingActive,
   isStreamingActive
 } from '../../commands/tokenActions';
+
+//Context imports
 import { shouldIncludeContext, markContextDirty } from '../contextHandler';
+
+//Lifecycle, Prompt Builder & router imports
 import { buildOpenAIMessages, buildOllamaMessages, PromptContext, getLanguage } from '../../commands/promptBuilder';
 import { routeChatRequest, stopHealthLoop, startHealthLoop } from '../../api/apiRouter';
 import { getOrCreateChatPanel } from './chatPanelLifecycle';
@@ -114,10 +132,6 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       break;
     }
 
-
-
-
-
       case 'addEditors': {
         await addAllOpenEditorsToContext();
         updatePendingFileTokens();
@@ -164,15 +178,31 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
       case 'sendToAI': {
         stopHealthLoop(); // pause health checks while streaming
+
+        // Check if this is a tool call (e.g., editFile)
+        if (evt.mode === 'toolCall') {
+          try {
+            const payload = JSON.parse(evt.message);
+            await dispatchToolCall(payload, panel);
+            return; // handled by dispatcher
+          } catch (e) {
+            console.error('Tool call processing error:', e);
+          }
+        }
+
+
+        // Regular sendToAI flow for chat/validation/completion
         await handleSendToAI(
           panel,
           evt.message,
           evt.mode,
           undefined,        // ← always use extension-side context
           evt.language
+          
         );
         break;
       }
+
 
       case 'stopGeneration':
         setStreamingActive(panel, false);
@@ -296,7 +326,10 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
           // Compute pending tokens for the startup file (so first send will spend them)
           updatePendingFileTokens();
-          lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+          lastContextState = getContextFiles().map(f => ({
+            uri: f.uri.toString(),
+            tokens: f.tokens
+          }));
 
           // Immediately inform the webview so the UI reflects the added file
           const files = getContextFiles().map(f => ({
@@ -310,14 +343,39 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         // Re-send token totals and refresh the visible token stats
         postFileContextTokens(panel);
         refreshTokenStats(panel);
+
+        // 🔑 Broadcast current capabilities so UI + LLM know what's allowed
+        sendCapabilities(panel);
+
         break;
       }
+
+
 
 
       case 'refreshApiStatus': {
         updateApiStatus(panel);
         break;
       }
+
+      case 'editFile': {
+        await dispatchToolCall(evt, panel);
+        break;
+      }
+
+
+      case 'toggleCapability': {
+        handleToggleCapability(evt, panel);
+        break;
+      }
+
+      case 'refreshCapabilities': {
+        sendCapabilities(panel);
+        break;
+      }
+
+
+
 
     }
   });
@@ -357,11 +415,15 @@ async function handleSendToAI(
       language: f.language,
       content: f.content
     })),
-    language
+    language,
+    // 🔑 Pass through current capabilities
+    capabilities: { editFile: canEditFiles() }
   };
+
   const built = apiType === 'ollama'
     ? buildOllamaMessages(promptContext)
     : buildOpenAIMessages(promptContext);
+
 
   const newSystem = built[0];
   const newUser   = built[1];

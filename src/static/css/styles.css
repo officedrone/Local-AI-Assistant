@@ -465,3 +465,25 @@ details.context-files-dropdown > summary .remove-file-btn{
   background-color:var(--vscode-editorHoverWidget-background);border-radius:4px;}
 #fileContextHeader{margin-bottom:8px;font-size:13px;
                    color:var(--vscode-editor-foreground);}
+
+/* ─── Agent Stuff - edit preview ───────────────────── */
+.edit-preview {
+  background: #f0f0f0;
+  padding: 10px;
+  border-radius: 4px;
+  margin-top: 10px;
+}
+
+.edit-preview pre {
+  white-space: pre-wrap;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 5px;
+  font-family: monospace;
+}
+
+.approve-edit {
+  margin-top: 10px;
+  padding: 5px 10px;
+  cursor: pointer;
+}

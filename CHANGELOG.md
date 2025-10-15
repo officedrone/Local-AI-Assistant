@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.0.26 – More Multi-file context implementation
+
+- ADD: First feature for agenting processing - edit file from the workspace
+
 ## 0.0.25 – More Multi-file context implementation
 
 - ADD: Support for [THINK] [/THINK] reasoning

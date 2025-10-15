@@ -115,6 +115,15 @@ export function getWebviewContent(
     </div>
   </div>
 
+  <!-- Agent controls -->
+  <div id="agentControls">
+    <label>
+      <input type="checkbox" id="allowFileEditsToggle"/>
+      Allow AI to edit files
+    </label>
+  </div>
+
+
   <script src="${mdItUri}"></script>
   <script type="module" src="${mainJsUri}"></script>
 </body>

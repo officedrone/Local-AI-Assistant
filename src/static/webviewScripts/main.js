@@ -5,6 +5,7 @@ import { setupContextControls, updateContextFileList } from './contextControls.j
 import { updateTokenPanel, updateFileContextTokens, updateIncludeCtxStatus } from './sessionTokens.js';
 import { setupLLMControls } from './llmControls.js';
 import { setupMessageRouter } from './messageRouter.js';
+import { setupAgentControls } from './agentControls.js';
 
 const vscode = acquireVsCodeApi();
 
@@ -16,6 +17,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupChatSend(vscode);
   setupContextControls(vscode);
   setupLLMControls(vscode);
+  setupAgentControls(vscode);
 
   setupMessageRouter(vscode, contextSize);
 
@@ -38,7 +40,7 @@ window.addEventListener('DOMContentLoaded', () => {
     vscode.postMessage({ type: 'openSettings' });
   });
 
-    document.body.addEventListener('click', (e) => {
+  document.body.addEventListener('click', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLAnchorElement)) return;
     const code = t.dataset.code || '';
@@ -57,7 +59,6 @@ window.addEventListener('DOMContentLoaded', () => {
     // Do not re-send webviewReady on every click; removed to avoid duplicate auto-adds/races
   });
 });
-
 
 window.addEventListener('message', (event) => {
   const msg = event.data;
@@ -82,4 +83,20 @@ window.addEventListener('message', (event) => {
     updateContextFileList(vscode, files); 
   }
 
+  // 🔑 New: handle standardized tool results
+  if (msg.type === 'toolResult') {
+    const { tool, success, data, error } = msg;
+    if (success) {
+      console.log(`✅ Tool ${tool} succeeded`, data);
+      // TODO: optionally update UI with a success banner or toast
+    } else {
+      console.error(`❌ Tool ${tool} failed:`, error);
+      // TODO: optionally surface error to the user in the panel
+    }
+  }
 });
+
+export function activate(vscode) {
+  // existing setup calls
+  setupAgentControls(vscode);
+}

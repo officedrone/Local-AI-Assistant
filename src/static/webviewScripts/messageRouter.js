@@ -18,10 +18,14 @@ let thinkingBuffer = '';
 let hasReceivedChunk = false;
 let noChunkTimer = null;
 
+// Capabilities variables
+let inToolCall = false;
+let toolBuffer = '';
+let scanBuffer = '';
+
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
     const { type, message, sessionTokens, fileContextTokens, totalTokens } = ev.data;
-
 
     switch (type) {
       case 'startStream': {
@@ -60,102 +64,183 @@ export function setupMessageRouter(vscode, contextSize) {
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
         const state = getStreamingState();
         state.assistantElem.classList.remove('pulsing');
-        let chunk = message || '';
 
-        // Detect start of <think>, <seed:think>, or [THINK]
-        if (
-          chunk.includes('<think>') ||
-          chunk.includes('<seed:think>') ||
-          chunk.includes('[THINK]')
-        ) {
+        // Defensive coercion to string
+        let chunk = message ?? '';
+        if (typeof chunk !== 'string') {
+          if (chunk && typeof chunk === 'object' && 'content' in chunk && typeof chunk.content === 'string') {
+            chunk = chunk.content;
+          } else {
+            try { chunk = String(chunk); } catch { chunk = ''; }
+          }
+        }
+
+        console.log('STREAM CHUNK:', JSON.stringify(chunk));
+
+        // ---------- Thinking detection ----------
+        if (chunk.includes('<think>') || chunk.includes('<seed:think>') || chunk.includes('[THINK]')) {
           inThinkingBlock = true;
           thinkingBuffer = '';
-          // Remove any of the start markers
-          chunk = chunk
-            .replace('<think>', '')
-            .replace('<seed:think>', '')
-            .replace('[THINK]', '');
+          chunk = chunk.replace('<think>', '').replace('<seed:think>', '').replace('[THINK]', '');
           state.assistantElem.classList.add('thinking');
         }
 
-        // Detect end of </think>, </seed:think>, or [/THINK]
-        if (
-          chunk.includes('</think>') ||
-          chunk.includes('</seed:think>') ||
-          chunk.includes('[/THINK]')
-        ) {
+        if (chunk.includes('</think>') || chunk.includes('</seed:think>') || chunk.includes('[/THINK]')) {
           inThinkingBlock = false;
-          // Remove any of the end markers
-          chunk = chunk
-            .replace('</think>', '')
-            .replace('</seed:think>', '')
-            .replace('[/THINK]', '');
+          chunk = chunk.replace('</think>', '').replace('</seed:think>', '').replace('[/THINK]', '');
           thinkingBuffer = '';
-
-          // Remove thinking or pulsing style
-          state.assistantElem.classList.remove('thinking');
-          state.assistantElem.classList.remove('pulsing');
-
-          // Reset assistantRaw so final answer overwrites thinking text
+          state.assistantElem.classList.remove('thinking', 'pulsing');
           setStreamingState({ ...state, assistantRaw: '' });
-
-          // Clear bubble content entirely, ready for real content
           const body = state.assistantElem.querySelector('.markdown-body');
           body.innerHTML = '<strong>Assistant:</strong><br/>';
-          // IMPORTANT: do NOT return here — let any remaining chunk fall through
         }
 
         if (inThinkingBlock) {
           thinkingBuffer += chunk;
-
           const body = state.assistantElem.querySelector('.markdown-body');
           let contentEl = body.querySelector('.thinking-content');
-
-          // Create the structure once
           if (!contentEl) {
             body.innerHTML = `
               <div class="thinking-header">💡 Thinking…</div>
               <div class="thinking-content"></div>
             `;
             contentEl = body.querySelector('.thinking-content');
-
-            // Track whether user is at bottom
             contentEl.dataset.autoScroll = 'true';
             contentEl.addEventListener('scroll', () => {
-              const atBottom =
-                contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight <
-                20;
+              const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
               contentEl.dataset.autoScroll = atBottom.toString();
             });
           }
-
-          // Update content without replacing the element
           contentEl.innerHTML = renderMd(thinkingBuffer);
-
-          // Only auto-scroll inner content if user is at bottom
           if (contentEl.dataset.autoScroll === 'true') {
             contentEl.scrollTop = contentEl.scrollHeight;
           }
-
-          // Outer chat scroll still works if user hasn't scrolled up there
-          if (shouldAutoScroll) {
-            scheduleScrollToBottom();
-          }
+          if (shouldAutoScroll) scheduleScrollToBottom();
           return;
         }
 
-        // Normal streaming after thinking block or non-thinking stream
-        const nextRaw = (state.assistantRaw || '') + chunk;
-        setStreamingState({ ...state, assistantRaw: nextRaw });
+        // ---------- Tool-call detection with rolling buffer ----------
+        scanBuffer += chunk;
+        const openTag = '[LAIToolCall]';
+        const closeTag = '[/LAIToolCall]';
 
-        const body = state.assistantElem.querySelector('.markdown-body');
-        body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
+        console.log('SCANBUFFER:', scanBuffer);
 
-        injectLinks(state.assistantElem);
+        if (!inToolCall) {
+          const openIdx = scanBuffer.indexOf(openTag);
+          console.log('ACCUMULATED SCANBUFFER:', JSON.stringify(scanBuffer));
+          if (openIdx !== -1) {
+            console.log('>>> Detected LAIToolCall OPEN');
+            inToolCall = true;
+            toolBuffer = '';
+            // Discard up to and including the open tag
+            scanBuffer = scanBuffer.slice(openIdx + openTag.length);
+            // Show bubble
+            const body = state.assistantElem.querySelector('.markdown-body');
+            body.innerHTML = `
+              <div class="thinking-header">🔧 Tool call in progress…</div>
+              <div class="thinking-content"></div>
+            `;
+            const contentEl = body.querySelector('.thinking-content');
+            if (contentEl) {
+              contentEl.dataset.autoScroll = 'true';
+              contentEl.addEventListener('scroll', () => {
+                const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
+                contentEl.dataset.autoScroll = atBottom.toString();
+              });
+            }
+            state.assistantElem.classList.add('thinking');
+          }
+        }
 
-        if (shouldAutoScroll) scheduleScrollToBottom();
+        if (inToolCall) {
+          const combined = toolBuffer + scanBuffer;
+          const closeIdx = combined.indexOf(closeTag);
+          if (closeIdx !== -1) {
+            console.log('>>> Detected LAIToolCall CLOSE');
+            toolBuffer = combined.slice(0, closeIdx);
+            scanBuffer = combined.slice(closeIdx + closeTag.length);
+
+            // Finalize bubble instead of clearing it
+            inToolCall = false;
+            state.assistantElem.classList.remove('pulsing');
+            const body = state.assistantElem.querySelector('.markdown-body');
+            body.innerHTML = `
+              <div class="thinking-header">🔧 Tool call complete</div>
+              <details open>
+                <summary>Show JSON payload</summary>
+                <pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+              </details>
+            `;
+
+            try {
+              const normalized = toolBuffer.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+              const payload = JSON.parse(normalized);
+              vscode.postMessage({
+                type: 'sendToAI',
+                message: JSON.stringify(payload),
+                mode: 'toolCall'
+              });
+            } catch (e) {
+              console.error('Tool call parsing error:', e, toolBuffer);
+            }
+            toolBuffer = '';
+          } else {
+            toolBuffer = combined;
+            scanBuffer = '';
+
+            // 🔑 Update the bubble content as we stream tool JSON
+            const body = state.assistantElem.querySelector('.markdown-body');
+            let contentEl = body.querySelector('.thinking-content');
+            if (contentEl) {
+              contentEl.innerHTML = `<pre>${toolBuffer
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')}</pre>`;
+              if (contentEl.dataset.autoScroll === 'true') {
+                contentEl.scrollTop = contentEl.scrollHeight;
+              }
+              if (shouldAutoScroll) scheduleScrollToBottom();
+            }
+
+            return;
+          }
+        }
+
+        // ---------- Normal streaming ----------
+        function hasPotentialTagFragment(buffer, openTag, closeTag) {
+          const candidates = [openTag, closeTag];
+          for (const tag of candidates) {
+            const max = Math.min(buffer.length, tag.length - 1);
+            for (let k = 1; k <= max; k++) {
+              const suffix = buffer.slice(-k);
+              if (tag.startsWith(suffix)) return true;
+            }
+          }
+          return false;
+        }
+
+        if (!inToolCall) {
+          const hasFullTag = scanBuffer.includes(openTag) || scanBuffer.includes(closeTag);
+          const hasPartialTag = hasPotentialTagFragment(scanBuffer, openTag, closeTag);
+          if (!hasFullTag && !hasPartialTag) {
+            if (scanBuffer) {
+              const nextRaw = (state.assistantRaw || '') + scanBuffer;
+              setStreamingState({ ...state, assistantRaw: nextRaw });
+              const body = state.assistantElem.querySelector('.markdown-body');
+              body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
+              injectLinks(state.assistantElem);
+              if (shouldAutoScroll) scheduleScrollToBottom();
+              scanBuffer = '';
+            }
+          }
+        }
+
         break;
       }
+
+
+
+
 
       case 'earlyEnd': {
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
@@ -359,6 +444,39 @@ export function setupMessageRouter(vscode, contextSize) {
         // Reset send button text
         document.getElementById('sendButton').textContent = 'Send';
         scrollToBottomImmediate(true);
+      }
+
+
+      case 'editPreview': {
+        const { content, uri } = ev.data;
+        const previewDiv = document.createElement('div');
+        previewDiv.className = 'edit-preview';
+        previewDiv.innerHTML = `
+          <strong>Proposed Changes for ${uri}:</strong>
+          <pre>${content}</pre>
+          <button class="approve-edit">Approve Edit</button>
+        `;
+
+        // Append to the chat bubble or a dedicated preview area
+        const assistantBubble = document.querySelector('.ai-message');
+        if (assistantBubble) {
+          assistantBubble.appendChild(previewDiv);
+        }
+
+        // Add event listener for approve button
+        previewDiv.addEventListener('click', (e) => {
+          if (e.target.classList.contains('approve-edit')) {
+            vscode.postMessage({ type: 'confirmEdit', uri });
+          }
+        });
+        break;
+      }
+
+      case 'confirmEdit': {
+        const { uri } = ev.data;
+        // Re-send the original tool call to apply the edit
+        vscode.postMessage({ type: 'sendToAI', message: JSON.stringify({ type: 'editFile', uri }) });
+        break;
       }
 
 

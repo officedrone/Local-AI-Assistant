@@ -30,17 +30,72 @@ export function formatFileContexts(
     .join('\n\n');
 }
 
+/**
+ * Utility: format capabilities into a string for the system prompt.
+ * Uses [LAIToolCall] ... [/LAIToolCall] tags to wrap JSON tool calls.
+ */
+export function formatCapabilities(
+  capabilities: { [key: string]: boolean }
+): string {
+  const enabled = Object.entries(capabilities)
+    .filter(([_, v]) => v)
+    .map(([k]) => `- ${k}`)
+    .join('\n');
+  if (!enabled) {
+    return 'You currently have no special capabilities enabled.';
+  }
+  return `
+You currently have access to the following capabilities/tools:
+${enabled}
+
+When you want to use a capability, you must output ONLY a JSON object wrapped in [LAIToolCall] ... [/LAIToolCall] tags.
+Do not use any other tag styles (such as <|channel|> or XML‑like tags).
+
+For the editFile capability, the JSON MUST have this shape:
+[LAIToolCall]
+{
+  "type": "editFile",
+  "uri": "file:///absolute/path/to/file",
+  "edits": [
+    {
+      "start": { "line": 0, "character": 0 },
+      "end":   { "line": 0, "character": 0 },
+      "newText": "# Added comment\\n"
+    }
+  ]
+}
+[/LAIToolCall]
+
+Notes:
+- VS Code positions are 0-based (line 0 = first line, character 0 = first column).
+- Use "newText" as the key for inserted text.
+- Do not invent other keys like range, text, filePath, or changes.
+- Prefer emitting **multiple small edits** in the "edits" array rather than replacing the entire file.
+- Each edit should cover only the minimal range necessary (e.g. one function, one comment).
+- Preserve original indentation and spacing exactly when constructing "newText".
+- Use spaces/tabs consistently with the surrounding file context.
+- Do not collapse multiple lines into one.
+- When replacing a statement, always replace the entire line (from character 0 to end of line).
+- Do not try to surgically replace substrings inside a line unless explicitly asked.
+- Only replace the whole file if absolutely unavoidable.
+`.trim();
+}
+
+
 // ---------- Chat Prompt ----------
 export const chatPrompt = (
   language: string,
   fileContexts?: { uri: string; language: string; content: string }[],
-  contextSize?: number
+  contextSize?: number,
+  capabilities: { [key: string]: boolean } = {}
 ): string => {
   const maxThinkTokens = getMaxThinkTokens(contextSize);
   const approxWords = Math.floor(maxThinkTokens / 0.75);
   const approxSentences = Math.ceil(maxThinkTokens / 20);
 
   let prompt = `You are a helpful AI assistant that answers developer questions clearly and as concisely as possible. If providing code blocks, provide only relevant code blocks and not the full file unless the user requests the full file. The language in use is ${language}
+  
+  ${formatCapabilities(capabilities)}
 
 When reasoning, you must use a <think>...</think> section:
 - Limit this section to a maximum of ${maxThinkTokens} tokens (≈ ${approxWords} words, about ${approxSentences} sentences).
@@ -51,6 +106,9 @@ When reasoning, you must use a <think>...</think> section:
 After closing </think>, follow these instructions for your final answer:
 - Answer clearly and concisely.
 - Provide only relevant code blocks, not the full file unless explicitly requested.`;
+
+  // 🔑 Inject capabilities
+  prompt += `\n\n${formatCapabilities(capabilities)}`;
 
   const formatted = formatFileContexts(fileContexts);
   if (formatted) {
@@ -75,7 +133,8 @@ export const validationPrompt = (
   code: string,
   contexts?: { uri: string; language: string; content: string }[],
   language: string = 'plaintext',
-  contextSize?: number
+  contextSize?: number,
+  capabilities: { [key: string]: boolean } = {}
 ): string => {
   const maxThinkTokens = getMaxThinkTokens(contextSize);
   const approxWords = Math.floor(maxThinkTokens / 0.75);
@@ -85,6 +144,8 @@ export const validationPrompt = (
 
   return `
 You are a code validation assistant.
+
+${formatCapabilities(capabilities)}
 
 Validate the code snippet below for correctness and clarity. Reason what the code context purpose is and ensure the code snippet makes sense within the file context.
 
@@ -124,7 +185,8 @@ export const completionPrompt = (
   code: string,
   contexts?: { uri: string; language: string; content: string }[],
   language: string = 'plaintext',
-  contextSize?: number
+  contextSize?: number,
+  capabilities: { [key: string]: boolean } = {}
 ): string => {
   const maxThinkTokens = getMaxThinkTokens(contextSize);
   const approxWords = Math.floor(maxThinkTokens / 0.75);
@@ -134,6 +196,8 @@ export const completionPrompt = (
 
   return `
 You are a code generation assistant.
+
+${formatCapabilities(capabilities)}
 
 Complete the code snippet meaningfully using the context. Reason what the code context purpose is and ensure the code snippet makes sense within the file context. If the code snippet is a comment only, then build the code that the comment suggests. 
 
@@ -153,6 +217,6 @@ After closing </think>, follow these instructions for your final answer:
 
 ${formatted ? `Reference contexts:\n${formatted}` : ''}
 
-Code to complete:\n\`\`\`${language}\n${code.trim()}\n\`\`\`
+Code to complete:\n\`\`\`${language}\n${code.trim()}\n\`\
 `;
 };
