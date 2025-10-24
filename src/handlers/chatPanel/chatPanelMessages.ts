@@ -13,7 +13,7 @@ import {
 
 
 //Agent imports
-import { handleEditMessage } from '../agent/agentToolsVSFiles';
+import { handleEditMessage, handleRequestPreview } from '../agent/agentToolsVSFiles';
 import { handleToggleCapability, sendCapabilities, canEditFiles } from '../agent/agentToolsCapabilityMgr';
 import { dispatchToolCall } from '../agent/agentToolsIndex';
 
@@ -179,29 +179,50 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       case 'sendToAI': {
         stopHealthLoop(); // pause health checks while streaming
 
-        // Check if this is a tool call (e.g., editFile)
+        // If this is a tool call (e.g., editFile), parse and dispatch
         if (evt.mode === 'toolCall') {
           try {
-            const payload = JSON.parse(evt.message);
+            let payload: any;
+            try {
+              payload = typeof evt.message === 'string' ? JSON.parse(evt.message) : evt.message;
+            } catch (parseErr) {
+              // Inform webview of parse failure
+              panel.webview.postMessage({
+                type: 'toolResult',
+                tool: 'unknown',
+                success: false,
+                error: 'Failed to parse tool call JSON',
+                details: String(parseErr)
+              });
+              return;
+            }
+
+            // Dispatch to registered tool handlers (e.g., editFile)
             await dispatchToolCall(payload, panel);
             return; // handled by dispatcher
-          } catch (e) {
-            console.error('Tool call processing error:', e);
+          } catch (dispatchErr) {
+            console.error('Tool call processing error:', dispatchErr);
+            panel.webview.postMessage({
+              type: 'toolResult',
+              tool: evt?.type ?? 'unknown',
+              success: false,
+              error: String(dispatchErr)
+            });
+            return;
           }
         }
-
 
         // Regular sendToAI flow for chat/validation/completion
         await handleSendToAI(
           panel,
           evt.message,
           evt.mode,
-          undefined,        // ← always use extension-side context
+          undefined,        // always use extension-side context
           evt.language
-          
         );
         break;
       }
+
 
 
       case 'stopGeneration':
@@ -349,6 +370,62 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
         break;
       }
+
+      case 'confirmEdit': {
+        try {
+          const payload = evt.data;
+          if (!payload || typeof payload.uri !== 'string' || !Array.isArray(payload.edits)) {
+            panel.webview.postMessage({
+              type: 'editResult',
+              uri: String(payload?.uri ?? ''),
+              success: false,
+              error: 'Invalid confirmEdit payload'
+            });
+            break;
+          }
+
+          await handleEditMessage({
+            type: 'editFile',
+            uri: payload.uri,
+            edits: payload.edits
+          }, panel.webview);
+        } catch (err) {
+          panel.webview.postMessage({
+            type: 'editResult',
+            uri: String(evt?.data?.uri ?? ''),
+            success: false,
+            error: String(err)
+          });
+        }
+        break;
+      }
+
+      case 'requestPreview': {
+        try {
+          const payload = evt.data;
+          if (!payload || typeof payload.uri !== 'string' || !Array.isArray(payload.edits)) {
+            panel.webview.postMessage({
+              type: 'editPreview',
+              uri: String(payload?.uri ?? ''),
+              content: '',
+              edits: [],
+              preview: 'Invalid requestPreview payload'
+            });
+            break;
+          }
+          await handleRequestPreview(payload.uri, payload.edits, panel.webview);
+        } catch (err) {
+          panel.webview.postMessage({
+            type: 'editPreview',
+            uri: String(evt?.data?.uri ?? ''),
+            content: '',
+            edits: [],
+            preview: String(err)
+          });
+        }
+        break;
+      }
+
 
 
 

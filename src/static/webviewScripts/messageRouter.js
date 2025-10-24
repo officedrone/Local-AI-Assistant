@@ -23,6 +23,9 @@ let inToolCall = false;
 let toolBuffer = '';
 let scanBuffer = '';
 
+// Initialize a global store for edit data
+window.storedEdits = {};
+
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
     const { type, message, sessionTokens, fileContextTokens, totalTokens } = ev.data;
@@ -75,8 +78,6 @@ export function setupMessageRouter(vscode, contextSize) {
           }
         }
 
-        console.log('STREAM CHUNK:', JSON.stringify(chunk));
-
         // ---------- Thinking detection ----------
         if (chunk.includes('<think>') || chunk.includes('<seed:think>') || chunk.includes('[THINK]')) {
           inThinkingBlock = true;
@@ -92,7 +93,7 @@ export function setupMessageRouter(vscode, contextSize) {
           state.assistantElem.classList.remove('thinking', 'pulsing');
           setStreamingState({ ...state, assistantRaw: '' });
           const body = state.assistantElem.querySelector('.markdown-body');
-          body.innerHTML = '<strong>Assistant:</strong><br/>';
+          if (body) body.innerHTML = '<strong>Assistant:</strong><br/>';
         }
 
         if (inThinkingBlock) {
@@ -119,35 +120,23 @@ export function setupMessageRouter(vscode, contextSize) {
           return;
         }
 
-        // ---------- Tool-call detection with rolling buffer ----------
+        // ---------- Tool-call detection ----------
         scanBuffer += chunk;
         const openTag = '[LAIToolCall]';
         const closeTag = '[/LAIToolCall]';
 
-        console.log('SCANBUFFER:', scanBuffer);
-
         if (!inToolCall) {
           const openIdx = scanBuffer.indexOf(openTag);
-          console.log('ACCUMULATED SCANBUFFER:', JSON.stringify(scanBuffer));
           if (openIdx !== -1) {
-            console.log('>>> Detected LAIToolCall OPEN');
             inToolCall = true;
             toolBuffer = '';
-            // Discard up to and including the open tag
             scanBuffer = scanBuffer.slice(openIdx + openTag.length);
-            // Show bubble
             const body = state.assistantElem.querySelector('.markdown-body');
-            body.innerHTML = `
-              <div class="thinking-header">🔧 Tool call in progress…</div>
-              <div class="thinking-content"></div>
-            `;
-            const contentEl = body.querySelector('.thinking-content');
-            if (contentEl) {
-              contentEl.dataset.autoScroll = 'true';
-              contentEl.addEventListener('scroll', () => {
-                const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
-                contentEl.dataset.autoScroll = atBottom.toString();
-              });
+            if (body) {
+              body.innerHTML = `
+                <div class="thinking-header">🔧 Tool call in progress…</div>
+                <div class="thinking-content"></div>
+              `;
             }
             state.assistantElem.classList.add('thinking');
           }
@@ -157,51 +146,58 @@ export function setupMessageRouter(vscode, contextSize) {
           const combined = toolBuffer + scanBuffer;
           const closeIdx = combined.indexOf(closeTag);
           if (closeIdx !== -1) {
-            console.log('>>> Detected LAIToolCall CLOSE');
+            // Tool call complete
             toolBuffer = combined.slice(0, closeIdx);
             scanBuffer = combined.slice(closeIdx + closeTag.length);
-
-            // Finalize bubble instead of clearing it
             inToolCall = false;
             state.assistantElem.classList.remove('pulsing');
             const body = state.assistantElem.querySelector('.markdown-body');
-            body.innerHTML = `
-              <div class="thinking-header">🔧 Tool call complete</div>
-              <details open>
-                <summary>Show JSON payload</summary>
-                <pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-              </details>
-            `;
+            if (body) {
+              body.innerHTML = `
+                <div class="thinking-header">🔧 Tool call complete</div>
+                <details open>
+                  <summary>Show JSON payload</summary>
+                  <pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                </details>
+              `;
+            }
 
             try {
               const normalized = toolBuffer.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-              const payload = JSON.parse(normalized);
+              const parsedTool = JSON.parse(normalized);
+
+              // Build raw after-text (content)
+              const content = Array.isArray(parsedTool.edits)
+                ? parsedTool.edits.map(e => (typeof e.newText === 'string' ? e.newText : '')).join('\n')
+                : '';
+
+              // Ask the extension to generate the diff preview string
               vscode.postMessage({
-                type: 'sendToAI',
-                message: JSON.stringify(payload),
-                mode: 'toolCall'
+                type: 'requestPreview',
+                data: {
+                  uri: parsedTool.uri,
+                  edits: parsedTool.edits || []
+                }
               });
             } catch (e) {
-              console.error('Tool call parsing error:', e, toolBuffer);
+              if (body) {
+                body.innerHTML += `<pre class="tool-error">Tool parse error: ${String(e)}</pre>`;
+              }
             }
+
             toolBuffer = '';
           } else {
             toolBuffer = combined;
             scanBuffer = '';
-
-            // 🔑 Update the bubble content as we stream tool JSON
             const body = state.assistantElem.querySelector('.markdown-body');
-            let contentEl = body.querySelector('.thinking-content');
+            let contentEl = body && body.querySelector('.thinking-content');
             if (contentEl) {
-              contentEl.innerHTML = `<pre>${toolBuffer
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')}</pre>`;
+              contentEl.innerHTML = `<pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
               if (contentEl.dataset.autoScroll === 'true') {
                 contentEl.scrollTop = contentEl.scrollHeight;
               }
               if (shouldAutoScroll) scheduleScrollToBottom();
             }
-
             return;
           }
         }
@@ -227,8 +223,10 @@ export function setupMessageRouter(vscode, contextSize) {
               const nextRaw = (state.assistantRaw || '') + scanBuffer;
               setStreamingState({ ...state, assistantRaw: nextRaw });
               const body = state.assistantElem.querySelector('.markdown-body');
-              body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
-              injectLinks(state.assistantElem);
+              if (body) {
+                body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
+                injectLinks(state.assistantElem);
+              }
               if (shouldAutoScroll) scheduleScrollToBottom();
               scanBuffer = '';
             }
@@ -238,6 +236,164 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
       }
 
+
+
+      case 'editPreview': {
+        console.log('WEBVIEW ← editPreview', ev.data);
+        const { content, uri, edits, preview } = ev.data;
+
+        // ensure global store exists
+        window.storedEdits = window.storedEdits || {};
+        window.storedEdits[uri] = typeof edits === 'string' ? JSON.parse(edits) : edits;
+
+        // Avoid duplicate previews for the same file
+        const assistantBubbles = document.querySelectorAll('.ai-message');
+        const assistantBubble = assistantBubbles.length
+          ? assistantBubbles[assistantBubbles.length - 1]
+          : document.body;
+        if (assistantBubble.querySelector(`.edit-preview[data-uri="${uri}"]`)) {
+          break; // already rendered a preview for this uri
+        }
+
+        const previewDiv = document.createElement('div');
+        previewDiv.className = 'edit-preview';
+        previewDiv.dataset.uri = uri;
+
+        const title = document.createElement('strong');
+        title.textContent = `Proposed Changes for ${uri}:`;
+        previewDiv.appendChild(title);
+
+        // Quick “after” view
+        if (content) {
+          const afterPre = document.createElement('pre');
+          afterPre.className = 'edit-preview-after';
+          afterPre.textContent = content;
+          previewDiv.appendChild(afterPre);
+        }
+
+        // Full before/after diff view (if provided)
+        if (preview) {
+          const diffPre = document.createElement('pre');
+          diffPre.className = 'edit-preview-diff';
+          diffPre.textContent = preview;
+          previewDiv.appendChild(diffPre);
+        }
+
+        const approveBtn = document.createElement('button');
+        approveBtn.className = 'approve-edit';
+        approveBtn.dataset.uri = uri;
+        approveBtn.textContent = 'Approve Edit';
+        previewDiv.appendChild(approveBtn);
+
+        const rejectBtn = document.createElement('button');
+        rejectBtn.className = 'reject-edit';
+        rejectBtn.dataset.uri = uri;
+        rejectBtn.textContent = 'Reject Edit';
+        previewDiv.appendChild(rejectBtn);
+
+
+        // Insert preview above token counter if present
+        try {
+          const body = assistantBubble.querySelector('.markdown-body') || assistantBubble;
+          const tokenDiv = body.querySelector('.token-count');
+          if (tokenDiv && tokenDiv.parentNode === body) {
+            body.insertBefore(previewDiv, tokenDiv);
+          } else if (body.firstChild) {
+            // Insert near the top of the body, after the assistant header if present
+            // Prefer inserting after a header element if one exists, otherwise prepend
+            const header = body.querySelector('.thinking-header');
+            if (header && header.parentNode === body && header.nextSibling) {
+              body.insertBefore(previewDiv, header.nextSibling);
+            } else {
+              body.insertBefore(previewDiv, body.firstChild);
+            }
+          } else {
+            body.appendChild(previewDiv);
+          }
+        } catch (e) {
+          console.error('Failed to insert edit preview into assistant bubble body, appending instead', e);
+          try { assistantBubble.appendChild(previewDiv); } catch { document.body.appendChild(previewDiv); }
+        }
+
+
+        previewDiv.addEventListener('click', (e) => {
+          const t = e.target;
+
+          // Approve button
+          if (t && t.classList && t.classList.contains('approve-edit')) {
+            const key = t.dataset.uri;
+            const payload = window.storedEdits[key];
+
+            // Disable approve and show confirmation state
+            t.disabled = true;
+            t.textContent = 'Edit Approved';
+            t.classList.add('approved');
+
+            // Disable reject if present to lock the choice
+            const rejectBtn = previewDiv.querySelector('.reject-edit');
+            if (rejectBtn) rejectBtn.disabled = true;
+
+            // Notify extension
+            vscode.postMessage({
+              type: 'confirmEdit',
+              data: { uri: key, edits: payload }
+            });
+
+            return;
+          }
+
+          // Reject button
+          if (t && t.classList && t.classList.contains('reject-edit')) {
+            const key = t.dataset.uri;
+
+            // Show rejected state and disable both buttons
+            t.disabled = true;
+            t.textContent = 'Edit Rejected';
+            t.classList.add('rejected');
+
+            const approveBtn = previewDiv.querySelector('.approve-edit');
+            if (approveBtn) {
+              approveBtn.disabled = true;
+              approveBtn.textContent = 'Approve Edit';
+            }
+
+            // Notify extension
+            vscode.postMessage({
+              type: 'rejectEdit',
+              data: { uri: key }
+            });
+
+            return;
+          }
+        });
+
+        break;
+      }
+
+
+
+      case 'confirmEdit': {
+        const { uri, edits } = ev.data;
+        vscode.postMessage({
+          type: 'confirmEdit',
+          data: { uri, edits }
+        });
+        break;
+      }
+
+
+
+      //sendToAI loopback
+      case 'sendToAI': {
+        vscode.postMessage({
+          type: 'sendToAI',
+          message: ev.data.message,
+          mode: ev.data.mode,
+          fileContext: ev.data.fileContext,
+          language: ev.data.language
+        });
+        break;
+      }
 
 
 
@@ -447,51 +603,6 @@ export function setupMessageRouter(vscode, contextSize) {
       }
 
 
-      case 'editPreview': {
-        const { content, uri } = ev.data;
-        const previewDiv = document.createElement('div');
-        previewDiv.className = 'edit-preview';
-        previewDiv.innerHTML = `
-          <strong>Proposed Changes for ${uri}:</strong>
-          <pre>${content}</pre>
-          <button class="approve-edit">Approve Edit</button>
-        `;
-
-        // Append to the chat bubble or a dedicated preview area
-        const assistantBubble = document.querySelector('.ai-message');
-        if (assistantBubble) {
-          assistantBubble.appendChild(previewDiv);
-        }
-
-        // Add event listener for approve button
-        previewDiv.addEventListener('click', (e) => {
-          if (e.target.classList.contains('approve-edit')) {
-            vscode.postMessage({ type: 'confirmEdit', uri });
-          }
-        });
-        break;
-      }
-
-      case 'confirmEdit': {
-        const { uri } = ev.data;
-        // Re-send the original tool call to apply the edit
-        vscode.postMessage({ type: 'sendToAI', message: JSON.stringify({ type: 'editFile', uri }) });
-        break;
-      }
-
-
-
-      //sendToAI loopback
-      case 'sendToAI': {
-        vscode.postMessage({
-          type: 'sendToAI',
-          message: ev.data.message,
-          mode: ev.data.mode,
-          fileContext: ev.data.fileContext,
-          language: ev.data.language
-        });
-        break;
-      }
 
       //update context file list in UI
       case 'contextUpdated': {

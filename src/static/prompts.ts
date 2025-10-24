@@ -58,8 +58,8 @@ For the editFile capability, the JSON MUST have this shape:
   "uri": "file:///absolute/path/to/file",
   "edits": [
     {
-      "start": { "line": 0, "character": 0 },
-      "end":   { "line": 0, "character": 0 },
+      "start": { "line": 1 },
+      "end":   { "line": 1 },
       "newText": "# Added comment\\n"
     }
   ]
@@ -67,7 +67,8 @@ For the editFile capability, the JSON MUST have this shape:
 [/LAIToolCall]
 
 Notes:
-- VS Code positions are 0-based (line 0 = first line, character 0 = first column).
+- VS Code positions are **0-based** (line 0 = first line).
+- Always set "character": 0 (we ignore characters and replace whole lines).
 - Use "newText" as the key for inserted text.
 - Do not invent other keys like range, text, filePath, or changes.
 - Prefer emitting **multiple small edits** in the "edits" array rather than replacing the entire file.
@@ -75,7 +76,7 @@ Notes:
 - Preserve original indentation and spacing exactly when constructing "newText".
 - Use spaces/tabs consistently with the surrounding file context.
 - Do not collapse multiple lines into one.
-- When replacing a statement, always replace the entire line (from character 0 to end of line).
+- When replacing a statement, always replace the entire line.
 - Do not try to surgically replace substrings inside a line unless explicitly asked.
 - Only replace the whole file if absolutely unavoidable.
 `.trim();

@@ -30,8 +30,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('click', (e) => {
     const details = document.querySelector('details.context-files-dropdown');
-    if (!details) return;
-    if (details.open && !details.contains(e.target)) {
+    if (details?.open && !details.contains(e.target)) {
       details.open = false;
     }
   });
@@ -56,14 +55,12 @@ window.addEventListener('DOMContentLoaded', () => {
     } else if (t.classList.contains('insert-link')) {
       vscode.postMessage({ type: 'insertCode', message: code });
     }
-    // Do not re-send webviewReady on every click; removed to avoid duplicate auto-adds/races
   });
 });
 
 window.addEventListener('message', (event) => {
   const msg = event.data;
 
-  // If the extension provided a contextSize, keep the dataset in sync
   if (msg.contextSize != null) {
     document.body.dataset.contextSize = String(msg.contextSize);
   }
@@ -80,23 +77,19 @@ window.addEventListener('message', (event) => {
   if (msg.type === 'contextUpdated') {
     const files = Array.isArray(msg.files) ? msg.files : [];
     updateIncludeCtxStatus(files.length > 0);
-    updateContextFileList(vscode, files); 
+    updateContextFileList(vscode, files);
   }
 
-  // 🔑 New: handle standardized tool results
   if (msg.type === 'toolResult') {
     const { tool, success, data, error } = msg;
     if (success) {
       console.log(`✅ Tool ${tool} succeeded`, data);
-      // TODO: optionally update UI with a success banner or toast
     } else {
       console.error(`❌ Tool ${tool} failed:`, error);
-      // TODO: optionally surface error to the user in the panel
     }
   }
 });
 
 export function activate(vscode) {
-  // existing setup calls
   setupAgentControls(vscode);
 }

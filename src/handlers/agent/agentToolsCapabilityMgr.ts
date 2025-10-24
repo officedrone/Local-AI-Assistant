@@ -1,15 +1,19 @@
 // src/handlers/agent/agentToolsCapabilityMgr.ts
 import * as vscode from 'vscode';
+import { WebviewPanel } from 'vscode';
 
 /**
  * Handle a toggleCapability message from the webview.
  * Persists the capability state into VS Code settings.
+ *
+ * Note: stores capabilities under "localAIAssistant.capabilities".
+ * Key names should match what webview and prompts expect (e.g. "allowFileEdits").
  */
 export async function handleToggleCapability(
   evt: { key: string; value: boolean },
-  panel: vscode.WebviewPanel
+  panel: WebviewPanel
 ) {
-  // Update the setting under localAIAssistant.capabilities
+  if (!evt || typeof evt.key !== 'string') return;
   await vscode.workspace
     .getConfiguration('localAIAssistant.capabilities')
     .update(evt.key, evt.value, vscode.ConfigurationTarget.Global);
@@ -21,7 +25,7 @@ export async function handleToggleCapability(
 /**
  * Broadcast the current capabilities to the webview.
  */
-export function sendCapabilities(panel: vscode.WebviewPanel) {
+export function sendCapabilities(panel: WebviewPanel) {
   const allowFileEdits = vscode.workspace
     .getConfiguration('localAIAssistant.capabilities')
     .get<boolean>('allowFileEdits', false);
