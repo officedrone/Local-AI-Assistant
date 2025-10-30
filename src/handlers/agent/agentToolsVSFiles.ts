@@ -34,24 +34,16 @@ function ensureEndsWithNewline(text: string) {
  * 🔑 Normalize edits to exclusive end (backend always 0-based, exclusive).
  */
 function normalizeEdits(edits: EditChange[], doc: vscode.TextDocument): EditChange[] {
-  const lastLine = Math.max(0, doc.lineCount - 1);
-  const docEnd = doc.lineCount; // exclusive sentinel
-
   return (edits || []).map(e => {
-    // Clamp start and end, allow empty range (insertion)
-    const s = clamp(Number(e.start?.line) || 0, 0, lastLine);
-    const endExclRaw = Number(e.end?.line);
-    const endExcl = Number.isFinite(endExclRaw)
-      ? clamp(endExclRaw as number, 0, docEnd)
-      : s; // if missing, treat as insertion at start
+    const startLine = clamp(e.start.line, 0, doc.lineCount - 1);
+    const endLine   = clamp(e.end?.line ?? startLine, 0, doc.lineCount - 1);
 
-    // Ensure start <= end (swap if needed to avoid negative ranges)
-    const startLine = Math.min(s, endExcl);
-    const endLine = Math.max(s, endExcl);
+    const startChar = e.start.character ?? 0;
+    const endChar   = e.end?.character ?? doc.lineAt(endLine).text.length;
 
     return {
-      start: { line: startLine, character: 0 },
-      end:   { line: endLine, character: 0 }, // exclusive end
+      start: { line: startLine, character: startChar },
+      end:   { line: endLine,   character: endChar },
       newText: e.newText ?? ''
     };
   });

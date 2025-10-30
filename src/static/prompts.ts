@@ -82,7 +82,8 @@ General rules for editFile capability:
 - **Replacement line count must match the target range.**
   - If replacing K lines, newText must contain exactly K lines (by \\n separation).
   - If you need to add more lines, use a separate INSERT edit.
-- **Always set "character": 0.** Whole-line operations only.
+- **Always match line identation when replacing lines.
+- **Always align line identation with surrounding code when inserting new line.
 - **Use "newText"** as the key for inserted or replacement text. Do not invent other keys (range, text, filePath, changes).
 - Prefer **multiple small edits** rather than replacing the entire file.
 - Determine if you need to make changes across multiple files. If so, make multiple tool calls.
