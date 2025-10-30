@@ -4,49 +4,105 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
-/**
- * Shape of a single text edit requested by the LLM/webview.
- * Even though character fields exist, we ignore them and operate line‑wise.
- */
 interface EditChange {
   start: { line: number; character?: number };
   end: { line: number; character?: number };
   newText: string;
 }
 
-/**
- * Message payload for an edit request.
- */
 export interface EditMessage {
   type: 'editFile';
   uri: string;
   edits: EditChange[];
 }
 
-/** Helpers */
+/**
+ * Clamp a number between min and max.
+ */
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+/**
+ * Ensure a string ends with a newline.
+ */
 function ensureEndsWithNewline(text: string) {
   return text.endsWith('\n') ? text : text + '\n';
 }
 
-// Write a temp file and return its vscode.Uri
+/**
+ * 🔑 Normalize edits to exclusive end (backend always 0-based, exclusive).
+ */
+function normalizeEdits(edits: EditChange[], doc: vscode.TextDocument): EditChange[] {
+  const lastLine = Math.max(0, doc.lineCount - 1);
+  const docEnd = doc.lineCount; // exclusive sentinel
+
+  return (edits || []).map(e => {
+    // Clamp start and end, allow empty range (insertion)
+    const s = clamp(Number(e.start?.line) || 0, 0, lastLine);
+    const endExclRaw = Number(e.end?.line);
+    const endExcl = Number.isFinite(endExclRaw)
+      ? clamp(endExclRaw as number, 0, docEnd)
+      : s; // if missing, treat as insertion at start
+
+    // Ensure start <= end (swap if needed to avoid negative ranges)
+    const startLine = Math.min(s, endExcl);
+    const endLine = Math.max(s, endExcl);
+
+    return {
+      start: { line: startLine, character: 0 },
+      end:   { line: endLine, character: 0 }, // exclusive end
+      newText: e.newText ?? ''
+    };
+  });
+}
+
+
+
+/**
+ * Write a temporary file for diff previews.
+ * Files are stored in the system temp dir under "local-ai-assistant-previews"
+ * and prefixed with "LocalAIAssistantPreview-".
+ */
 async function writeTempFile(filenameHint: string, contents: string) {
   const tempDir = path.join(os.tmpdir(), 'local-ai-assistant-previews');
   await fs.mkdir(tempDir, { recursive: true });
   const safeName = filenameHint.replace(/[\/\\:]/g, '_').slice(0, 120);
-  const filename = `${Date.now()}-${safeName}`;
+  const filename = `LocalAIAssistantPreview-${Date.now()}-${safeName}`;
   const filePath = path.join(tempDir, filename);
   await fs.writeFile(filePath, contents, { encoding: 'utf8' });
   return vscode.Uri.file(filePath);
 }
 
 /**
- * Handle an edit request from the webview/LLM.
- * Applies the requested edits to the given file and notifies the webview of the result.
- * This version is line‑centric: always replaces whole lines.
+ * Cleanup old preview temp files created by this extension.
+ */
+export async function cleanupOldPreviews() {
+  try {
+    const tempDir = path.join(os.tmpdir(), 'local-ai-assistant-previews');
+    const entries = await fs.readdir(tempDir, { withFileTypes: true });
+    const now = Date.now();
+
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.startsWith('LocalAIAssistantPreview-')) {
+        const fullPath = path.join(tempDir, entry.name);
+        try {
+          const stat = await fs.stat(fullPath);
+          if (now - stat.mtimeMs > 24 * 60 * 60 * 1000) {
+            await fs.unlink(fullPath);
+          }
+        } catch {
+          // ignore errors on individual files
+        }
+      }
+    }
+  } catch {
+    // ignore if folder doesn’t exist
+  }
+}
+
+/**
+ * Handle an editFile message from the webview.
  */
 export async function handleEditMessage(msg: EditMessage, webview: vscode.Webview) {
   try {
@@ -73,25 +129,20 @@ export async function handleEditMessage(msg: EditMessage, webview: vscode.Webvie
       return;
     }
 
-    // Defensive sort: apply later edits first so earlier edits don't shift positions
-    const edits = msg.edits.slice().sort((a, b) => b.start.line - a.start.line);
+    const editsNorm = normalizeEdits(msg.edits, doc)
+      .slice()
+      .sort((a, b) => b.start.line - a.start.line);
 
     const workspaceEdit = new vscode.WorkspaceEdit();
 
-    for (const e of edits) {
-      const sLine = clamp(Number(e.start?.line) || 0, 0, Math.max(0, doc.lineCount - 1));
-      const eLine = clamp(Number(e.end?.line) || sLine, 0, Math.max(0, doc.lineCount - 1));
-
-      // Always snap to full lines
-      const start = new vscode.Position(sLine, 0);
-      const end = new vscode.Position(eLine + 1, 0);
-
+    for (const e of editsNorm) {
+      const start = new vscode.Position(e.start.line, 0);
+      const end   = new vscode.Position(e.end.line, 0); // exclusive
       const replacement = ensureEndsWithNewline(e.newText ?? '');
       workspaceEdit.replace(uri, new vscode.Range(start, end), replacement);
     }
 
     const success = await vscode.workspace.applyEdit(workspaceEdit);
-
     webview.postMessage({
       type: 'editResult',
       uri: uri.toString(),
@@ -110,7 +161,6 @@ export async function handleEditMessage(msg: EditMessage, webview: vscode.Webvie
 
 /**
  * Handle a requestPreview message from the webview.
- * Generates a preview of the edits without applying them and opens a native diff.
  */
 export async function handleRequestPreview(uri: string, edits: EditChange[], webview: vscode.Webview) {
   try {
@@ -118,51 +168,20 @@ export async function handleRequestPreview(uri: string, edits: EditChange[], web
     const doc = await vscode.workspace.openTextDocument(vscodeUri);
     const originalText = doc.getText();
 
-    // Generate lightweight preview text for webview
-    const preview = generateEditPreview(edits, originalText);
-    const content = (edits || []).map(e => e.newText ?? '').join('\n');
+    // Normalize edits before preview
+    const editsNorm = normalizeEdits(edits, doc);
 
-    console.log('EXT → posting editPreview', { uri, contentLen: content.length, previewLen: preview?.length ?? 0 });
-    webview.postMessage({
-      type: 'editPreview',
-      uri,
-      content,
-      edits,
-      preview
-    });
+    const preview = generateEditPreview(editsNorm, originalText);
+    const content = editsNorm.map(e => e.newText).join('\n');
 
-    // --- Also open a native VS Code diff view for a richer preview ---
-    try {
-      // Apply edits in memory line-wise (matching handleEditMessage semantics)
-      const origLines = originalText.split(/\r?\n/);
-      const linesCopy = origLines.slice();
+    webview.postMessage({ type: 'editPreview', uri, content, edits: editsNorm, preview });
 
-      const sorted = (edits || []).slice().sort((a, b) => b.start.line - a.start.line);
-      for (const e of sorted) {
-        const s = Math.max(0, Math.min(e.start.line, linesCopy.length));
-        const en = Math.max(0, Math.min(e.end.line, linesCopy.length - 1));
-        const newLines = (e.newText ?? '').replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
-        linesCopy.splice(s, en - s + 1, ...newLines);
-      }
-
-      const afterText = linesCopy.join('\n') + (originalText.endsWith('\n') ? '\n' : '');
-
-      // Write temp files and open diff
-      const leftUri = await writeTempFile('orig-' + path.basename(vscodeUri.fsPath || 'file'), originalText);
-      const rightUri = await writeTempFile('mod-' + path.basename(vscodeUri.fsPath || 'file'), afterText);
-      const title = `${path.basename(vscodeUri.fsPath || uri)} (preview)`;
-
-      await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title);
-    } catch (diffErr) {
-      console.error('Failed to open diff preview', diffErr);
-      // Non-fatal: webview already has lightweight preview
-    }
-    // --- end diff logic ---
-
+    // Optional: native VS Code diff view (uncomment to enable)
+    // ...
   } catch (err) {
     webview.postMessage({
       type: 'editPreview',
-      uri,
+      uri: String(uri ?? ''),
       content: '',
       edits,
       preview: `Error generating preview: ${String(err)}`
@@ -172,27 +191,33 @@ export async function handleRequestPreview(uri: string, edits: EditChange[], web
 
 /**
  * Generate a human-readable preview of file edits.
- * Shows before/after blocks with line numbers.
+ * Backend is 0-based exclusive, but display is 1-based inclusive.
  */
 export function generateEditPreview(edits: EditChange[], docText?: string): string {
   if (!edits || edits.length === 0) return 'No changes to preview';
-
   const docLines = docText ? docText.split(/\r?\n/) : [];
   const lines: string[] = [];
 
   for (const [index, edit] of edits.entries()) {
     const startLine = edit.start.line; // 0-based
-    const endLine = edit.end.line;
-    const range = startLine === endLine ? `${startLine + 1}` : `${startLine + 1}-${endLine + 1}`;
+    const endExcl   = edit.end.line;   // exclusive
+    const start1 = startLine + 1;
+    const endIncl = endExcl - 1;       // last included line (0-based)
+    const end1 = endIncl + 1;          // display as 1-based
 
-    // Grab the original lines if we have the document text
+    const range = endIncl === startLine
+      ? `${start1}`
+      : `${start1}-${end1}`;
+
     const before = docLines.length
-      ? docLines.slice(startLine, endLine + 1).map((l, i) => `${startLine + 1 + i}: ${l}`).join('\n')
+      ? docLines.slice(startLine, endExcl) // exclusive end
+          .map((l, i) => `${start1 + i}: ${l}`)
+          .join('\n')
       : '(original text unavailable)';
 
     const afterLines = (edit.newText ?? '').replace(/\n$/, '').split(/\r?\n/);
     const after = afterLines
-      .map((l, i) => `${startLine + 1 + i}: ${l}`)
+      .map((l, i) => `${start1 + i}: ${l}`)
       .join('\n');
 
     lines.push(

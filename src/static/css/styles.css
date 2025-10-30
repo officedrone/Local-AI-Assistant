@@ -479,11 +479,6 @@ details.context-files-dropdown > summary .remove-file-btn{
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.edit-preview:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12),
-              inset 0 0 0 1px var(--vscode-editorWidgetBorder);
-}
 
 .edit-preview pre {
   white-space: pre-wrap;
@@ -565,3 +560,92 @@ button:disabled {
     font-size: 13px;
   }
 }
+
+
+/* ─── CAPABILITIES DROPDOWN ─────────────────── */
+details.capabilities-dropdown {
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  background-color: var(--vscode-editor-background);
+  margin-top: 12px;
+}
+
+details.capabilities-dropdown[open] > div.capabilities-list {
+  background-color: var(--vscode-editor-background);
+}
+
+details.capabilities-dropdown > summary {
+  
+  align-items: center;
+  justify-content: space-between;
+  padding: .2rem .4rem;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  background-color: var(--vscode-button-secondaryBackground);
+  font-size: .85rem;
+  cursor: pointer;
+}
+
+details.capabilities-dropdown > summary::-webkit-details-marker {
+  display: none; /* Hide default marker in WebKit browsers */
+}
+
+details.capabilities-dropdown > summary .capabilities-summary-label {
+  font-weight: 600;
+  position: relative;
+  padding-left: 1.2rem;
+  flex-grow: 1; /* Take available space */
+}
+
+details.capabilities-dropdown > summary .capabilities-summary-label::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: .15s ease;
+  color: var(--vscode-editor-foreground);
+  font-size: 1.2em; /* Make arrow more visible */
+  line-height: 1;
+}
+
+details.capabilities-dropdown[open] > summary .capabilities-summary-label::before {
+  content: '▾';
+}
+
+details.capabilities-dropdown > summary .toggle-icon {
+  margin-left: .8rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── CAPABILITIES CONTENT ─────────────────── */
+.capabilities-list {
+  padding: .5rem;
+  background-color: var(--vscode-editorWidget-background);
+}
+
+.capabilities-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: .4rem;
+  margin-bottom: .2rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color .2s ease;
+}
+
+.capabilities-list label:hover {
+  background-color: var(--vscode-editorHoverWidget-background);
+}
+
+.capabilities-list input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--btn-bg);
+  cursor: pointer;
+}
+
+

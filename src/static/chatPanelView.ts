@@ -116,12 +116,16 @@ export function getWebviewContent(
   </div>
 
   <!-- Agent controls -->
-  <div id="agentControls">
+  <details class="capabilities-dropdown">
+    <summary>Tools & Capabilities (Experimental)</summary>
     <label>
-      <input type="checkbox" id="allowFileEditsToggle"/>
-      Allow AI to edit files
+      <input type="checkbox" id="allowFileEditsToggle" title="Allow LLM to edit files in the workspace via a tool call"/>
+      editFiles (Experimental)
     </label>
-  </div>
+
+  </details>
+
+
 
 
   <script src="${mdItUri}"></script>

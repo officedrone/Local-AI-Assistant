@@ -254,16 +254,18 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
             controller.abort();
           }
         }
-        // Tell the webview to clean up its UI
         panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
 
         resetSessionTokenCount();
         conversation = [];
         lastFileContextTokens = 0;
 
-        // Reset multi-file tracking for a fresh session
+        // Snapshot the URIs of files currently in context (respects removals)
+        const previousContextUris = getContextFiles().map(f => f.uri.toString());
+
+        // Reset multi-file tracking
         seenFiles.clear();
-        spentFiles.clear();            // fresh session: nothing spent yet
+        spentFiles.clear();
         pendingFileTokens = null;
         pendingFileUris = [];
         lastContextState = [];
@@ -273,31 +275,66 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
         const newPanel = getOrCreateChatPanel();
 
-        // Ensure an editor is focused so activeTextEditor is set
+        // Ensure active editor is available
         await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
-
-        // Auto‑add the current file to context and immediately update the UI
         const active = vscode.window.activeTextEditor;
-        if (active) {
-          await addFileToContext(active.document.uri);
-          updatePendingFileTokens(); // startup file becomes pending for first send
-          lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+        const activeUri = active?.document.uri.toString();
 
-          // Push current context to webview so UI reflects it right away
-          const files = getContextFiles().map(f => ({
-            uri: f.uri.toString(),
-            language: f.language,
-            tokens: f.tokens
-          }));
-          newPanel.webview.postMessage({ type: 'contextUpdated', files });
+        // Decide what to re-add based on intent rules
+        let urisToReAdd: string[] = [];
+
+        if (previousContextUris.length === 0) {
+          // No previous context → just the active file (if any)
+          if (activeUri) urisToReAdd = [activeUri];
+        } else if (previousContextUris.length === 1) {
+          // One previous file:
+          // - if active is the same → keep it
+          // - if different → use active only
+          if (activeUri) {
+            urisToReAdd = [activeUri];
+          } else {
+            urisToReAdd = previousContextUris;
+          }
+        } else {
+          // Multiple previous files:
+          // - if active is in the previous set → restore all
+          // - if active is different → use active only
+          if (activeUri) {
+            if (previousContextUris.includes(activeUri)) {
+              urisToReAdd = previousContextUris;
+            } else {
+              urisToReAdd = [activeUri];
+            }
+          } else {
+            urisToReAdd = previousContextUris;
+          }
         }
+
+        // Clear context before re-adding to avoid union behavior
+        clearContextFiles();
+
+        // Re-add with fresh reload (intent set only)
+        for (const uriStr of urisToReAdd) {
+          await addFileToContext(vscode.Uri.parse(uriStr), true);
+        }
+
+        updatePendingFileTokens();
+        lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+
+        const files = getContextFiles().map(f => ({
+          uri: f.uri.toString(),
+          language: f.language,
+          tokens: f.tokens
+        }));
+        newPanel.webview.postMessage({ type: 'contextUpdated', files });
 
         lastFileContextTokens = getEffectiveFileContextTokens();
         refreshTokenStats(newPanel);
         updateApiStatus(newPanel);
         break;
-
       }
+
+
 
 
       case 'stopStream': {

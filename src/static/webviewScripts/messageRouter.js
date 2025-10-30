@@ -26,6 +26,10 @@ let scanBuffer = '';
 // Initialize a global store for edit data
 window.storedEdits = {};
 
+// Track multiple pending edits for the same assistant bubble
+let pendingEdits = new Map(); // bubbleId -> array of {uri, content, edits, preview}
+
+
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
     const { type, message, sessionTokens, fileContextTokens, totalTokens } = ev.data;
@@ -236,8 +240,6 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
       }
 
-
-
       case 'editPreview': {
         console.log('WEBVIEW ← editPreview', ev.data);
         const { content, uri, edits, preview } = ev.data;
@@ -246,125 +248,137 @@ export function setupMessageRouter(vscode, contextSize) {
         window.storedEdits = window.storedEdits || {};
         window.storedEdits[uri] = typeof edits === 'string' ? JSON.parse(edits) : edits;
 
-        // Avoid duplicate previews for the same file
+        // Get the assistant bubble (last one or create new if needed)
         const assistantBubbles = document.querySelectorAll('.ai-message');
         const assistantBubble = assistantBubbles.length
           ? assistantBubbles[assistantBubbles.length - 1]
           : document.body;
-        if (assistantBubble.querySelector(`.edit-preview[data-uri="${uri}"]`)) {
-          break; // already rendered a preview for this uri
+
+        // Ensure bubble has a stable ID
+        const bubbleId = assistantBubble.id || `bubble-${Date.now()}`;
+        if (!assistantBubble.id) assistantBubble.id = bubbleId;
+
+        // Collapse any JSON payload <details> before rendering preview
+        const jsonDetails = assistantBubble.querySelector('details');
+        if (jsonDetails) {
+          jsonDetails.removeAttribute('open');
         }
 
-        const previewDiv = document.createElement('div');
-        previewDiv.className = 'edit-preview';
-        previewDiv.dataset.uri = uri;
-
-        const title = document.createElement('strong');
-        title.textContent = `Proposed Changes for ${uri}:`;
-        previewDiv.appendChild(title);
-
-        // Quick “after” view
-        if (content) {
-          const afterPre = document.createElement('pre');
-          afterPre.className = 'edit-preview-after';
-          afterPre.textContent = content;
-          previewDiv.appendChild(afterPre);
+        // Store this edit in the pendingEdits map
+        if (!pendingEdits.has(bubbleId)) {
+          pendingEdits.set(bubbleId, []);
+        }
+        const bubblePendingEdits = pendingEdits.get(bubbleId);
+        const existingIndex = bubblePendingEdits.findIndex(edit => edit.uri === uri);
+        if (existingIndex === -1) {
+          bubblePendingEdits.push({ uri, content, edits, preview });
+        } else {
+          bubblePendingEdits[existingIndex] = { uri, content, edits, preview };
         }
 
-        // Full before/after diff view (if provided)
-        if (preview) {
-          const diffPre = document.createElement('pre');
-          diffPre.className = 'edit-preview-diff';
-          diffPre.textContent = preview;
-          previewDiv.appendChild(diffPre);
-        }
+        // 🔑 Ensure a container exists for multiple previews
+        const body = assistantBubble.querySelector('.markdown-body') || assistantBubble;
+        let previewContainer = assistantBubble.querySelector('.edit-previews-container');
+        if (!previewContainer) {
+          previewContainer = document.createElement('div');
+          previewContainer.className = 'edit-previews-container';
 
-        const approveBtn = document.createElement('button');
-        approveBtn.className = 'approve-edit';
-        approveBtn.dataset.uri = uri;
-        approveBtn.textContent = 'Approve Edit';
-        previewDiv.appendChild(approveBtn);
-
-        const rejectBtn = document.createElement('button');
-        rejectBtn.className = 'reject-edit';
-        rejectBtn.dataset.uri = uri;
-        rejectBtn.textContent = 'Reject Edit';
-        previewDiv.appendChild(rejectBtn);
-
-
-        // Insert preview above token counter if present
-        try {
-          const body = assistantBubble.querySelector('.markdown-body') || assistantBubble;
           const tokenDiv = body.querySelector('.token-count');
           if (tokenDiv && tokenDiv.parentNode === body) {
-            body.insertBefore(previewDiv, tokenDiv);
+            body.insertBefore(previewContainer, tokenDiv);
           } else if (body.firstChild) {
-            // Insert near the top of the body, after the assistant header if present
-            // Prefer inserting after a header element if one exists, otherwise prepend
             const header = body.querySelector('.thinking-header');
             if (header && header.parentNode === body && header.nextSibling) {
-              body.insertBefore(previewDiv, header.nextSibling);
+              body.insertBefore(previewContainer, header.nextSibling);
             } else {
-              body.insertBefore(previewDiv, body.firstChild);
+              body.insertBefore(previewContainer, body.firstChild);
             }
           } else {
-            body.appendChild(previewDiv);
+            body.appendChild(previewContainer);
           }
-        } catch (e) {
-          console.error('Failed to insert edit preview into assistant bubble body, appending instead', e);
-          try { assistantBubble.appendChild(previewDiv); } catch { document.body.appendChild(previewDiv); }
         }
 
+        // Clear and re-render all pending edits for this bubble
+        previewContainer.innerHTML = '';
+        bubblePendingEdits.forEach(({ uri, content, preview }) => {
+          const previewDiv = document.createElement('div');
+          previewDiv.className = 'edit-preview';
+          previewDiv.dataset.uri = uri;
 
-        previewDiv.addEventListener('click', (e) => {
-          const t = e.target;
+          const title = document.createElement('strong');
+          title.textContent = `Proposed Changes for ${uri}:`;
+          previewDiv.appendChild(title);
 
-          // Approve button
-          if (t && t.classList && t.classList.contains('approve-edit')) {
-            const key = t.dataset.uri;
-            const payload = window.storedEdits[key];
+          if (content) {
+            const afterPre = document.createElement('pre');
+            afterPre.className = 'edit-preview-after';
+            afterPre.textContent = content;
+            previewDiv.appendChild(afterPre);
+          }
+
+          if (preview) {
+            const diffPre = document.createElement('pre');
+            diffPre.className = 'edit-preview-diff';
+            diffPre.textContent = preview;
+            previewDiv.appendChild(diffPre);
+          }
+
+          const approveBtn = document.createElement('button');
+          approveBtn.className = 'approve-edit';
+          approveBtn.dataset.uri = uri;
+          approveBtn.textContent = 'Approve Edit';
+          previewDiv.appendChild(approveBtn);
+
+          const rejectBtn = document.createElement('button');
+          rejectBtn.className = 'reject-edit';
+          rejectBtn.dataset.uri = uri;
+          rejectBtn.textContent = 'Reject Edit';
+          previewDiv.appendChild(rejectBtn);
+
+          // Button handlers
+          previewDiv.addEventListener('click', (e) => {
+            const t = e.target;
+
+            if (t && t.classList && t.classList.contains('approve-edit')) {
+              const key = t.dataset.uri;
+              const payload = window.storedEdits[key];
 
             // Disable approve and show confirmation state
-            t.disabled = true;
-            t.textContent = 'Edit Approved';
-            t.classList.add('approved');
+              t.disabled = true;
+              t.textContent = 'Edit Approved';
+              t.classList.add('approved');
 
             // Disable reject if present to lock the choice
-            const rejectBtn = previewDiv.querySelector('.reject-edit');
-            if (rejectBtn) rejectBtn.disabled = true;
+              const rejectBtn = previewDiv.querySelector('.reject-edit');
+              if (rejectBtn) rejectBtn.remove();
 
-            // Notify extension
-            vscode.postMessage({
-              type: 'confirmEdit',
-              data: { uri: key, edits: payload }
-            });
-
-            return;
-          }
-
-          // Reject button
-          if (t && t.classList && t.classList.contains('reject-edit')) {
-            const key = t.dataset.uri;
-
-            // Show rejected state and disable both buttons
-            t.disabled = true;
-            t.textContent = 'Edit Rejected';
-            t.classList.add('rejected');
-
-            const approveBtn = previewDiv.querySelector('.approve-edit');
-            if (approveBtn) {
-              approveBtn.disabled = true;
-              approveBtn.textContent = 'Approve Edit';
+              vscode.postMessage({
+                type: 'confirmEdit',
+                data: { uri: key, edits: payload }
+              });
+              return;
             }
 
-            // Notify extension
-            vscode.postMessage({
-              type: 'rejectEdit',
-              data: { uri: key }
-            });
+            if (t && t.classList && t.classList.contains('reject-edit')) {
+              const key = t.dataset.uri;
 
-            return;
-          }
+            // Show rejected state and disable both buttons
+              t.disabled = true;
+              t.textContent = 'Edit Rejected';
+              t.classList.add('rejected');
+
+              const approveBtn = previewDiv.querySelector('.approve-edit');
+              if (approveBtn) approveBtn.remove();
+
+              vscode.postMessage({
+                type: 'rejectEdit',
+                data: { uri: key }
+              });
+              return;
+            }
+          });
+
+          previewContainer.appendChild(previewDiv);
         });
 
         break;
@@ -588,8 +602,42 @@ export function setupMessageRouter(vscode, contextSize) {
           if (!hasReceivedChunk) {
             const body = state.assistantElem.querySelector('.markdown-body');
             if (body) {
-              body.innerHTML = `<strong>Assistant:</strong><i><br/>
-                <span class="status-reason">&lt; Message Aborted by User &gt;</span>`;
+              // Try to parse and adjust line numbers for display
+              let pretty = toolBuffer;
+              try {
+                const normalized = toolBuffer.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+                const parsed = JSON.parse(normalized);
+                if (parsed && Array.isArray(parsed.edits)) {
+                  const display = {
+                    ...parsed,
+                    edits: parsed.edits.map(e => ({
+                      ...e,
+                      start: {
+                        ...e.start,
+                        line: (typeof e.start?.line === 'number') ? e.start.line + 1 : e.start?.line
+                      },
+                      end: {
+                        ...e.end,
+                        line: (typeof e.end?.line === 'number') ? e.end.line + 1 : e.end?.line
+                      }
+                    }))
+                  };
+                  pretty = JSON.stringify(display, null, 2);
+                } else {
+                  pretty = JSON.stringify(parsed, null, 2);
+                }
+              } catch {
+                // fallback to raw buffer if parse fails
+                pretty = toolBuffer;
+              }
+
+              body.innerHTML = `
+                <div class="thinking-header">🔧 Tool call complete</div>
+                <details>
+                  <summary>Show JSON payload</summary>
+                  <pre>${pretty.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                </details>
+              `;
             }
           }
         }
