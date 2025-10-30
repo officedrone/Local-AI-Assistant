@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.0.26 – More Multi-file context implementation
+
+- ADD: Agent framework + editFile tool (EXPERIMENTAL! Very early implementation so use at own risk) - Allow LLM to edit files in the workspace.
+- ADD: Capabilities framework, UI section
+- FIX: New session will always load 'fresh' files in the context. Also updated how/what files are loaded on new session based on previous context and what file is active when the new session was started.
+
 ## 0.0.25 – More Multi-file context implementation
 
 - ADD: Support for [THINK] [/THINK] reasoning

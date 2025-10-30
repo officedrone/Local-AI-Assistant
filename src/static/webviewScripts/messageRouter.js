@@ -18,10 +18,21 @@ let thinkingBuffer = '';
 let hasReceivedChunk = false;
 let noChunkTimer = null;
 
+// Capabilities variables
+let inToolCall = false;
+let toolBuffer = '';
+let scanBuffer = '';
+
+// Initialize a global store for edit data
+window.storedEdits = {};
+
+// Track multiple pending edits for the same assistant bubble
+let pendingEdits = new Map(); // bubbleId -> array of {uri, content, edits, preview}
+
+
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
     const { type, message, sessionTokens, fileContextTokens, totalTokens } = ev.data;
-
 
     switch (type) {
       case 'startStream': {
@@ -60,102 +71,346 @@ export function setupMessageRouter(vscode, contextSize) {
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
         const state = getStreamingState();
         state.assistantElem.classList.remove('pulsing');
-        let chunk = message || '';
 
-        // Detect start of <think>, <seed:think>, or [THINK]
-        if (
-          chunk.includes('<think>') ||
-          chunk.includes('<seed:think>') ||
-          chunk.includes('[THINK]')
-        ) {
+        // Defensive coercion to string
+        let chunk = message ?? '';
+        if (typeof chunk !== 'string') {
+          if (chunk && typeof chunk === 'object' && 'content' in chunk && typeof chunk.content === 'string') {
+            chunk = chunk.content;
+          } else {
+            try { chunk = String(chunk); } catch { chunk = ''; }
+          }
+        }
+
+        // ---------- Thinking detection ----------
+        if (chunk.includes('<think>') || chunk.includes('<seed:think>') || chunk.includes('[THINK]')) {
           inThinkingBlock = true;
           thinkingBuffer = '';
-          // Remove any of the start markers
-          chunk = chunk
-            .replace('<think>', '')
-            .replace('<seed:think>', '')
-            .replace('[THINK]', '');
+          chunk = chunk.replace('<think>', '').replace('<seed:think>', '').replace('[THINK]', '');
           state.assistantElem.classList.add('thinking');
         }
 
-        // Detect end of </think>, </seed:think>, or [/THINK]
-        if (
-          chunk.includes('</think>') ||
-          chunk.includes('</seed:think>') ||
-          chunk.includes('[/THINK]')
-        ) {
+        if (chunk.includes('</think>') || chunk.includes('</seed:think>') || chunk.includes('[/THINK]')) {
           inThinkingBlock = false;
-          // Remove any of the end markers
-          chunk = chunk
-            .replace('</think>', '')
-            .replace('</seed:think>', '')
-            .replace('[/THINK]', '');
+          chunk = chunk.replace('</think>', '').replace('</seed:think>', '').replace('[/THINK]', '');
           thinkingBuffer = '';
-
-          // Remove thinking or pulsing style
-          state.assistantElem.classList.remove('thinking');
-          state.assistantElem.classList.remove('pulsing');
-
-          // Reset assistantRaw so final answer overwrites thinking text
+          state.assistantElem.classList.remove('thinking', 'pulsing');
           setStreamingState({ ...state, assistantRaw: '' });
-
-          // Clear bubble content entirely, ready for real content
           const body = state.assistantElem.querySelector('.markdown-body');
-          body.innerHTML = '<strong>Assistant:</strong><br/>';
-          // IMPORTANT: do NOT return here — let any remaining chunk fall through
+          if (body) body.innerHTML = '<strong>Assistant:</strong><br/>';
         }
 
         if (inThinkingBlock) {
           thinkingBuffer += chunk;
-
           const body = state.assistantElem.querySelector('.markdown-body');
           let contentEl = body.querySelector('.thinking-content');
-
-          // Create the structure once
           if (!contentEl) {
             body.innerHTML = `
               <div class="thinking-header">💡 Thinking…</div>
               <div class="thinking-content"></div>
             `;
             contentEl = body.querySelector('.thinking-content');
-
-            // Track whether user is at bottom
             contentEl.dataset.autoScroll = 'true';
             contentEl.addEventListener('scroll', () => {
-              const atBottom =
-                contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight <
-                20;
+              const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
               contentEl.dataset.autoScroll = atBottom.toString();
             });
           }
-
-          // Update content without replacing the element
           contentEl.innerHTML = renderMd(thinkingBuffer);
-
-          // Only auto-scroll inner content if user is at bottom
           if (contentEl.dataset.autoScroll === 'true') {
             contentEl.scrollTop = contentEl.scrollHeight;
           }
-
-          // Outer chat scroll still works if user hasn't scrolled up there
-          if (shouldAutoScroll) {
-            scheduleScrollToBottom();
-          }
+          if (shouldAutoScroll) scheduleScrollToBottom();
           return;
         }
 
-        // Normal streaming after thinking block or non-thinking stream
-        const nextRaw = (state.assistantRaw || '') + chunk;
-        setStreamingState({ ...state, assistantRaw: nextRaw });
+        // ---------- Tool-call detection ----------
+        scanBuffer += chunk;
+        const openTag = '[LAIToolCall]';
+        const closeTag = '[/LAIToolCall]';
 
-        const body = state.assistantElem.querySelector('.markdown-body');
-        body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
+        if (!inToolCall) {
+          const openIdx = scanBuffer.indexOf(openTag);
+          if (openIdx !== -1) {
+            inToolCall = true;
+            toolBuffer = '';
+            scanBuffer = scanBuffer.slice(openIdx + openTag.length);
+            const body = state.assistantElem.querySelector('.markdown-body');
+            if (body) {
+              body.innerHTML = `
+                <div class="thinking-header">🔧 Tool call in progress…</div>
+                <div class="thinking-content"></div>
+              `;
+            }
+            state.assistantElem.classList.add('thinking');
+          }
+        }
 
-        injectLinks(state.assistantElem);
+        if (inToolCall) {
+          const combined = toolBuffer + scanBuffer;
+          const closeIdx = combined.indexOf(closeTag);
+          if (closeIdx !== -1) {
+            // Tool call complete
+            toolBuffer = combined.slice(0, closeIdx);
+            scanBuffer = combined.slice(closeIdx + closeTag.length);
+            inToolCall = false;
+            state.assistantElem.classList.remove('pulsing');
+            const body = state.assistantElem.querySelector('.markdown-body');
+            if (body) {
+              body.innerHTML = `
+                <div class="thinking-header">🔧 Tool call complete</div>
+                <details open>
+                  <summary>Show JSON payload</summary>
+                  <pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                </details>
+              `;
+            }
 
-        if (shouldAutoScroll) scheduleScrollToBottom();
+            try {
+              const normalized = toolBuffer.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+              const parsedTool = JSON.parse(normalized);
+
+              // Build raw after-text (content)
+              const content = Array.isArray(parsedTool.edits)
+                ? parsedTool.edits.map(e => (typeof e.newText === 'string' ? e.newText : '')).join('\n')
+                : '';
+
+              // Ask the extension to generate the diff preview string
+              vscode.postMessage({
+                type: 'requestPreview',
+                data: {
+                  uri: parsedTool.uri,
+                  edits: parsedTool.edits || []
+                }
+              });
+            } catch (e) {
+              if (body) {
+                body.innerHTML += `<pre class="tool-error">Tool parse error: ${String(e)}</pre>`;
+              }
+            }
+
+            toolBuffer = '';
+          } else {
+            toolBuffer = combined;
+            scanBuffer = '';
+            const body = state.assistantElem.querySelector('.markdown-body');
+            let contentEl = body && body.querySelector('.thinking-content');
+            if (contentEl) {
+              contentEl.innerHTML = `<pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+              if (contentEl.dataset.autoScroll === 'true') {
+                contentEl.scrollTop = contentEl.scrollHeight;
+              }
+              if (shouldAutoScroll) scheduleScrollToBottom();
+            }
+            return;
+          }
+        }
+
+        // ---------- Normal streaming ----------
+        function hasPotentialTagFragment(buffer, openTag, closeTag) {
+          const candidates = [openTag, closeTag];
+          for (const tag of candidates) {
+            const max = Math.min(buffer.length, tag.length - 1);
+            for (let k = 1; k <= max; k++) {
+              const suffix = buffer.slice(-k);
+              if (tag.startsWith(suffix)) return true;
+            }
+          }
+          return false;
+        }
+
+        if (!inToolCall) {
+          const hasFullTag = scanBuffer.includes(openTag) || scanBuffer.includes(closeTag);
+          const hasPartialTag = hasPotentialTagFragment(scanBuffer, openTag, closeTag);
+          if (!hasFullTag && !hasPartialTag) {
+            if (scanBuffer) {
+              const nextRaw = (state.assistantRaw || '') + scanBuffer;
+              setStreamingState({ ...state, assistantRaw: nextRaw });
+              const body = state.assistantElem.querySelector('.markdown-body');
+              if (body) {
+                body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
+                injectLinks(state.assistantElem);
+              }
+              if (shouldAutoScroll) scheduleScrollToBottom();
+              scanBuffer = '';
+            }
+          }
+        }
+
         break;
       }
+
+      case 'editPreview': {
+        console.log('WEBVIEW ← editPreview', ev.data);
+        const { content, uri, edits, preview } = ev.data;
+
+        // ensure global store exists
+        window.storedEdits = window.storedEdits || {};
+        window.storedEdits[uri] = typeof edits === 'string' ? JSON.parse(edits) : edits;
+
+        // Get the assistant bubble (last one or create new if needed)
+        const assistantBubbles = document.querySelectorAll('.ai-message');
+        const assistantBubble = assistantBubbles.length
+          ? assistantBubbles[assistantBubbles.length - 1]
+          : document.body;
+
+        // Ensure bubble has a stable ID
+        const bubbleId = assistantBubble.id || `bubble-${Date.now()}`;
+        if (!assistantBubble.id) assistantBubble.id = bubbleId;
+
+        // Collapse any JSON payload <details> before rendering preview
+        const jsonDetails = assistantBubble.querySelector('details');
+        if (jsonDetails) {
+          jsonDetails.removeAttribute('open');
+        }
+
+        // Store this edit in the pendingEdits map
+        if (!pendingEdits.has(bubbleId)) {
+          pendingEdits.set(bubbleId, []);
+        }
+        const bubblePendingEdits = pendingEdits.get(bubbleId);
+        const existingIndex = bubblePendingEdits.findIndex(edit => edit.uri === uri);
+        if (existingIndex === -1) {
+          bubblePendingEdits.push({ uri, content, edits, preview });
+        } else {
+          bubblePendingEdits[existingIndex] = { uri, content, edits, preview };
+        }
+
+        // 🔑 Ensure a container exists for multiple previews
+        const body = assistantBubble.querySelector('.markdown-body') || assistantBubble;
+        let previewContainer = assistantBubble.querySelector('.edit-previews-container');
+        if (!previewContainer) {
+          previewContainer = document.createElement('div');
+          previewContainer.className = 'edit-previews-container';
+
+          const tokenDiv = body.querySelector('.token-count');
+          if (tokenDiv && tokenDiv.parentNode === body) {
+            body.insertBefore(previewContainer, tokenDiv);
+          } else if (body.firstChild) {
+            const header = body.querySelector('.thinking-header');
+            if (header && header.parentNode === body && header.nextSibling) {
+              body.insertBefore(previewContainer, header.nextSibling);
+            } else {
+              body.insertBefore(previewContainer, body.firstChild);
+            }
+          } else {
+            body.appendChild(previewContainer);
+          }
+        }
+
+        // Clear and re-render all pending edits for this bubble
+        previewContainer.innerHTML = '';
+        bubblePendingEdits.forEach(({ uri, content, preview }) => {
+          const previewDiv = document.createElement('div');
+          previewDiv.className = 'edit-preview';
+          previewDiv.dataset.uri = uri;
+
+          const title = document.createElement('strong');
+          title.textContent = `Proposed Changes for ${uri}:`;
+          previewDiv.appendChild(title);
+
+          if (content) {
+            const afterPre = document.createElement('pre');
+            afterPre.className = 'edit-preview-after';
+            afterPre.textContent = content;
+            previewDiv.appendChild(afterPre);
+          }
+
+          if (preview) {
+            const diffPre = document.createElement('pre');
+            diffPre.className = 'edit-preview-diff';
+            diffPre.textContent = preview;
+            previewDiv.appendChild(diffPre);
+          }
+
+          const approveBtn = document.createElement('button');
+          approveBtn.className = 'approve-edit';
+          approveBtn.dataset.uri = uri;
+          approveBtn.textContent = 'Approve Edit';
+          previewDiv.appendChild(approveBtn);
+
+          const rejectBtn = document.createElement('button');
+          rejectBtn.className = 'reject-edit';
+          rejectBtn.dataset.uri = uri;
+          rejectBtn.textContent = 'Reject Edit';
+          previewDiv.appendChild(rejectBtn);
+
+          // Button handlers
+          previewDiv.addEventListener('click', (e) => {
+            const t = e.target;
+
+            if (t && t.classList && t.classList.contains('approve-edit')) {
+              const key = t.dataset.uri;
+              const payload = window.storedEdits[key];
+
+            // Disable approve and show confirmation state
+              t.disabled = true;
+              t.textContent = 'Edit Approved';
+              t.classList.add('approved');
+
+            // Disable reject if present to lock the choice
+              const rejectBtn = previewDiv.querySelector('.reject-edit');
+              if (rejectBtn) rejectBtn.remove();
+
+              vscode.postMessage({
+                type: 'confirmEdit',
+                data: { uri: key, edits: payload }
+              });
+              return;
+            }
+
+            if (t && t.classList && t.classList.contains('reject-edit')) {
+              const key = t.dataset.uri;
+
+            // Show rejected state and disable both buttons
+              t.disabled = true;
+              t.textContent = 'Edit Rejected';
+              t.classList.add('rejected');
+
+              const approveBtn = previewDiv.querySelector('.approve-edit');
+              if (approveBtn) approveBtn.remove();
+
+              vscode.postMessage({
+                type: 'rejectEdit',
+                data: { uri: key }
+              });
+              return;
+            }
+          });
+
+          previewContainer.appendChild(previewDiv);
+        });
+
+        break;
+      }
+
+
+
+      case 'confirmEdit': {
+        const { uri, edits } = ev.data;
+        vscode.postMessage({
+          type: 'confirmEdit',
+          data: { uri, edits }
+        });
+        break;
+      }
+
+
+
+      //sendToAI loopback
+      case 'sendToAI': {
+        vscode.postMessage({
+          type: 'sendToAI',
+          message: ev.data.message,
+          mode: ev.data.mode,
+          fileContext: ev.data.fileContext,
+          language: ev.data.language
+        });
+        break;
+      }
+
+
+
 
       case 'earlyEnd': {
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
@@ -347,8 +602,42 @@ export function setupMessageRouter(vscode, contextSize) {
           if (!hasReceivedChunk) {
             const body = state.assistantElem.querySelector('.markdown-body');
             if (body) {
-              body.innerHTML = `<strong>Assistant:</strong><i><br/>
-                <span class="status-reason">&lt; Message Aborted by User &gt;</span>`;
+              // Try to parse and adjust line numbers for display
+              let pretty = toolBuffer;
+              try {
+                const normalized = toolBuffer.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+                const parsed = JSON.parse(normalized);
+                if (parsed && Array.isArray(parsed.edits)) {
+                  const display = {
+                    ...parsed,
+                    edits: parsed.edits.map(e => ({
+                      ...e,
+                      start: {
+                        ...e.start,
+                        line: (typeof e.start?.line === 'number') ? e.start.line + 1 : e.start?.line
+                      },
+                      end: {
+                        ...e.end,
+                        line: (typeof e.end?.line === 'number') ? e.end.line + 1 : e.end?.line
+                      }
+                    }))
+                  };
+                  pretty = JSON.stringify(display, null, 2);
+                } else {
+                  pretty = JSON.stringify(parsed, null, 2);
+                }
+              } catch {
+                // fallback to raw buffer if parse fails
+                pretty = toolBuffer;
+              }
+
+              body.innerHTML = `
+                <div class="thinking-header">🔧 Tool call complete</div>
+                <details>
+                  <summary>Show JSON payload</summary>
+                  <pre>${pretty.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                </details>
+              `;
             }
           }
         }
@@ -362,18 +651,6 @@ export function setupMessageRouter(vscode, contextSize) {
       }
 
 
-
-      //sendToAI loopback
-      case 'sendToAI': {
-        vscode.postMessage({
-          type: 'sendToAI',
-          message: ev.data.message,
-          mode: ev.data.mode,
-          fileContext: ev.data.fileContext,
-          language: ev.data.language
-        });
-        break;
-      }
 
       //update context file list in UI
       case 'contextUpdated': {

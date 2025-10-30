@@ -24,6 +24,7 @@ export interface PromptContext {
   fileContext?: string;                        // legacy single-file support
   fileContexts?: NormalizedFileContext[];      // ✅ new multi-file support
   language?: string;
+  capabilities?: { [key: string]: boolean };   // 🔑 added
 }
 
 /**
@@ -55,7 +56,8 @@ export function buildOpenAIMessages({
   mode,
   fileContext,
   fileContexts,
-  language = 'plaintext'
+  language = 'plaintext',
+  capabilities = {}
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
   let systemPrompt = '';
@@ -67,7 +69,8 @@ export function buildOpenAIMessages({
         (fileContext
           ? [{ uri: 'active', language, content: fileContext }]
           : undefined),
-      contextSize
+      contextSize,
+      capabilities
     );
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(
@@ -77,7 +80,8 @@ export function buildOpenAIMessages({
           ? [{ uri: 'active', language, content: fileContext }]
           : undefined),
       language,
-      contextSize
+      contextSize,
+      capabilities
     );
   } else {
     systemPrompt = completionPrompt(
@@ -87,7 +91,8 @@ export function buildOpenAIMessages({
           ? [{ uri: 'active', language, content: fileContext }]
           : undefined),
       language,
-      contextSize
+      contextSize,
+      capabilities
     );
   }
 
@@ -112,7 +117,8 @@ export function buildOllamaMessages({
   mode,
   fileContext,
   fileContexts,
-  language = 'plaintext'
+  language = 'plaintext',
+  capabilities = {}
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
   let systemPrompt = '';
@@ -123,7 +129,9 @@ export function buildOllamaMessages({
       fileContexts ??
         (fileContext
           ? [{ uri: 'active', language, content: fileContext }]
-          : undefined)
+          : undefined),
+      contextSize,
+      capabilities
     );
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(
@@ -133,7 +141,8 @@ export function buildOllamaMessages({
           ? [{ uri: 'active', language, content: fileContext }]
           : undefined),
       language,
-      contextSize
+      contextSize,
+      capabilities
     );
   } else {
     systemPrompt = completionPrompt(
@@ -143,7 +152,8 @@ export function buildOllamaMessages({
           ? [{ uri: 'active', language, content: fileContext }]
           : undefined),
       language,
-      contextSize
+      contextSize,
+      capabilities
     );
   }
 

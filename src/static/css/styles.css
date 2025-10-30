@@ -465,3 +465,187 @@ details.context-files-dropdown > summary .remove-file-btn{
   background-color:var(--vscode-editorHoverWidget-background);border-radius:4px;}
 #fileContextHeader{margin-bottom:8px;font-size:13px;
                    color:var(--vscode-editor-foreground);}
+
+/* ─── Agent Stuff - edit preview ───────────────────── */
+.edit-preview {
+  background: var(--vscode-editorWidgetBackground);
+  padding: 10px;
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 12px;
+  margin-top: 10px;
+  display: block;
+  box-shadow: inset 0 0 0 1px var(--vscode-editorWidgetBorder),
+              0 2px 8px rgba(0,0,0,0.15);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+
+.edit-preview pre {
+  white-space: pre-wrap;
+  background: var(--vscode-editorBackground);
+  border: 1px solid var(--vscode-editorWidgetBorder);
+  padding: 5px;
+  font-family: monospace;
+  margin: 8px 0;
+}
+
+/* After / diff blocks */
+.edit-preview-after,
+.edit-preview-diff {
+  background: var(--vscode-editorBackground);
+  border: 1px solid var(--vscode-editorWidgetBorder);
+  padding: 8px;
+  border-radius: 3px;
+  font-family: monospace;
+  margin-top: 6px;
+}
+
+/* Buttons container spacing */
+.edit-preview .preview-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Approve button (existing class) */
+.approve-edit {
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid #2e7d32;
+  background: #2e7d32;
+  color: #fff;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Reject button */
+.reject-edit {
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid #b00020;
+  background: #fff;
+  color: #b00020;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Approved / Rejected states */
+button.approved {
+  background: #1b5e20;
+  border-color: #1b5e20;
+  color: #fff;
+}
+
+button.rejected {
+  background: #7f0000;
+  border-color: #7f0000;
+  color: #fff;
+}
+
+/* Disabled state */
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Small responsive tweaks */
+@media (max-width: 480px) {
+  .edit-preview {
+    padding: 8px;
+  }
+  .approve-edit, .reject-edit {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+}
+
+
+/* ─── CAPABILITIES DROPDOWN ─────────────────── */
+details.capabilities-dropdown {
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  background-color: var(--vscode-editor-background);
+  margin-top: 12px;
+}
+
+details.capabilities-dropdown[open] > div.capabilities-list {
+  background-color: var(--vscode-editor-background);
+}
+
+details.capabilities-dropdown > summary {
+  
+  align-items: center;
+  justify-content: space-between;
+  padding: .2rem .4rem;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  background-color: var(--vscode-button-secondaryBackground);
+  font-size: .85rem;
+  cursor: pointer;
+}
+
+details.capabilities-dropdown > summary::-webkit-details-marker {
+  display: none; /* Hide default marker in WebKit browsers */
+}
+
+details.capabilities-dropdown > summary .capabilities-summary-label {
+  font-weight: 600;
+  position: relative;
+  padding-left: 1.2rem;
+  flex-grow: 1; /* Take available space */
+}
+
+details.capabilities-dropdown > summary .capabilities-summary-label::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: .15s ease;
+  color: var(--vscode-editor-foreground);
+  font-size: 1.2em; /* Make arrow more visible */
+  line-height: 1;
+}
+
+details.capabilities-dropdown[open] > summary .capabilities-summary-label::before {
+  content: '▾';
+}
+
+details.capabilities-dropdown > summary .toggle-icon {
+  margin-left: .8rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── CAPABILITIES CONTENT ─────────────────── */
+.capabilities-list {
+  padding: .5rem;
+  background-color: var(--vscode-editorWidget-background);
+}
+
+.capabilities-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: .4rem;
+  margin-bottom: .2rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color .2s ease;
+}
+
+.capabilities-list label:hover {
+  background-color: var(--vscode-editorHoverWidget-background);
+}
+
+.capabilities-list input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--btn-bg);
+  cursor: pointer;
+}
+
+

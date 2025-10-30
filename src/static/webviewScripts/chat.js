@@ -71,9 +71,32 @@ export function setupChatSend(vscode) {
     }
   };
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendBtn.click();
+    if (e.key === 'Enter') {
+      if (e.ctrlKey && !e.shiftKey) {
+        // Handle Ctrl+Enter - insert newline
+        e.preventDefault();
+        e.stopPropagation();
+
+        const textarea = e.target;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+
+        // Insert newline at cursor position
+        const newText = text.substring(0, start) + '\n' + text.substring(end);
+        textarea.value = newText;
+
+        // Move cursor to after the inserted newline
+        setTimeout(() => {
+          textarea.selectionStart = start + 1;
+          textarea.selectionEnd = start + 1;
+        }, 0);
+      } else if (!e.shiftKey && textarea.value.trim()) {
+        // Handle regular Enter - send message
+        e.preventDefault();
+        sendBtn.click();
+      }
     }
   });
+
 }

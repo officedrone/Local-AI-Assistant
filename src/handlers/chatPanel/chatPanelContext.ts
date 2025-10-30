@@ -37,17 +37,24 @@ export function getContextFiles(): FileContext[] {
 /**
  * Add a file to the context by URI.
  */
-export async function addFileToContext(uri: vscode.Uri): Promise<void> {
+export async function addFileToContext(uri: vscode.Uri, forceReload: boolean = false): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(uri);
-  // prevent duplicates
-  if (contextFiles.find(f => f.uri.toString() === uri.toString())) {
+
+  // Only check for duplicates if not forcing reload
+  if (!forceReload && contextFiles.find(f => f.uri.toString() === uri.toString())) {
     return;
   }
+
+  // Remove existing file if forceReload is true (to ensure fresh content)
+  if (forceReload) {
+    contextFiles = contextFiles.filter(f => f.uri.toString() !== uri.toString());
+  }
+
   contextFiles.push({
     uri,
     language: doc.languageId,
     content: doc.getText(),
-    tokens: countTextTokens(doc.getText()) 
+    tokens: countTextTokens(doc.getText())
   });
   notifyContextUpdated();
 }
@@ -70,8 +77,9 @@ export function clearContextFiles(): void {
 
 /**
  * Add all currently opened editor tabs (visible and background) to context.
+ * Supports forceReload to ensure fresh content is always loaded.
  */
-export async function addAllOpenEditorsToContext() {
+export async function addAllOpenEditorsToContext(forceReload: boolean = false) {
   // 1) Collect all tabs across all groups
   const tabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
 
@@ -97,17 +105,9 @@ export async function addAllOpenEditorsToContext() {
            uri.scheme !== 'vscode';
   });
 
-  // 4) Add to context array
+  // 4) Add to context array (delegating to addFileToContext with forceReload)
   for (const uri of filtered) {
-    const doc = await vscode.workspace.openTextDocument(uri);
-    if (!contextFiles.find(f => f.uri.toString() === uri.toString())) {
-      contextFiles.push({
-        uri,
-        language: doc.languageId,
-        content: doc.getText(),
-        tokens: countTextTokens(doc.getText()) 
-      });
-    }
+    await addFileToContext(uri, forceReload);
   }
 
   // 5) Notify UI and token stats once
@@ -122,7 +122,7 @@ function notifyContextUpdated() {
       files: getContextFiles().map(f => ({
         uri: f.uri.toString(),
         language: f.language,
-        tokens: countTextTokens(f.content) 
+        tokens: countTextTokens(f.content)
       }))
     });
     postFileContextTokens(panel);

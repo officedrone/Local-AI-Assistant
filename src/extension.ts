@@ -82,6 +82,16 @@ export function activate(context: vscode.ExtensionContext) {
         lastApiType = newApiType;
       }
     }
+    if (event.affectsConfiguration(`${CONFIG_SECTION}.capabilities.allowFileEdits`)) {
+      const allowEdits = vscode.workspace
+        .getConfiguration(`${CONFIG_SECTION}.capabilities`)
+        .get<boolean>('allowFileEdits', false);
+
+      // Optionally notify the user
+      vscode.window.showInformationMessage(
+        `AI file editing capability is now ${allowEdits ? 'enabled' : 'disabled'}.`
+      );
+    }
   });
 
   context.subscriptions.push(onConfigChange);
