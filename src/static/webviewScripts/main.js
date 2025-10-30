@@ -104,26 +104,3 @@ window.addEventListener('message', (event) => {
 export function activate(vscode) {
   setupAgentControls(vscode);
 }
-
-// Handle Alt+Enter keyboard shortcut for inserting newlines in message input
-document.getElementById('messageInput').addEventListener('keydown', (e) => {
-  if (e.altKey && e.key === 'Enter') {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const textarea = e.target;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = textarea.value;
-
-    // Insert newline at cursor position
-    const newText = text.substring(0, start) + '\n' + text.substring(end);
-    textarea.value = newText;
-
-    // Move cursor to after the inserted newline
-    setTimeout(() => {
-      textarea.selectionStart = start + 1;
-      textarea.selectionEnd = start + 1;
-    }, 0);
-  }
-});
