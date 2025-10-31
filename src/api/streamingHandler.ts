@@ -34,11 +34,12 @@ export async function handleStreamingResponse({
   onToken,
   onDone,
 }: StreamingResponseOptions): Promise<void> {
-
   // Notify the webview we're starting a new stream
   panel.webview.postMessage({ type: 'startStream', message: '' });
 
   let assistantText = '';
+  let startTime = Date.now();
+  let totalTokens = 0;
 
   // Guard so finalize() can only run one time
   let didFinalize = false;
@@ -52,10 +53,18 @@ export async function handleStreamingResponse({
       return;
     }
 
-    // Send the one-and-only finalizeAI token count
+    const finalTokens = encodingForModel.encode(assistantText).length;
+
+    // Calculate TPS
+    const endTime = Date.now();
+    const durationSeconds = (endTime - startTime) / 1000;
+    const tps = durationSeconds > 0 ? (finalTokens / durationSeconds).toFixed(1) : '0.0';
+
+    // Send the one-and-only finalizeAI token count with TPS
     panel.webview.postMessage({
       type: 'finalizeAI',
-      tokens: encodingForModel.encode(assistantText).length
+      tokens: finalTokens,
+      tps: parseFloat(tps)
     });
 
     // Close out the stream
@@ -67,6 +76,7 @@ export async function handleStreamingResponse({
     // Notify upstream that streaming is done
     if (onDone) onDone();
   };
+
 
   try {
     if (apiType === 'ollama') {
@@ -81,10 +91,35 @@ export async function handleStreamingResponse({
 
           assistantText += chunk;
           panel.webview.postMessage({ type: 'streamChunk', message: chunk });
+
+          // NEW: Send real-time token count during streaming
           if (onToken) onToken(chunk);
+
+          // Track tokens and time for TPS calculation
+          totalTokens = encodingForModel.encode(assistantText).length;
+          const elapsedSeconds = (Date.now() - startTime) / 1000;
+
+          // Calculate TPS based on current progress, but smooth it out
+          let tps = 0;
+          if (elapsedSeconds > 0) {
+            // Use a more stable calculation that doesn't jump around so much
+            tps = totalTokens / elapsedSeconds;
+            // Cap at reasonable values to prevent extreme jumps
+            tps = Math.min(tps, 1000); // Cap at 1000 TPS for sanity
+          }
+
+          // Send intermediate token count for this chunk with TPS
+          panel.webview.postMessage({
+            type: 'streamTokenUpdate',
+            tokens: totalTokens,
+            tps: parseFloat(tps.toFixed(1))
+          });
         },
         onDone: finalize,
       });
+
+
+
     } else {
       try {
         await streamFromOpenAI({
@@ -97,10 +132,35 @@ export async function handleStreamingResponse({
 
             assistantText += chunk;
             panel.webview.postMessage({ type: 'streamChunk', message: chunk });
+
+            // NEW: Send real-time token count during streaming
             if (onToken) onToken(chunk);
+
+            // Track tokens and time for TPS calculation
+            totalTokens = encodingForModel.encode(assistantText).length;
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+
+            // Calculate TPS based on current progress, but smooth it out
+            let tps = 0;
+            if (elapsedSeconds > 0) {
+              // Use a more stable calculation that doesn't jump around so much
+              tps = totalTokens / elapsedSeconds;
+              // Cap at reasonable values to prevent extreme jumps
+              tps = Math.min(tps, 1000); // Cap at 1000 TPS for sanity
+            }
+
+            // Send intermediate token count for this chunk with TPS
+            panel.webview.postMessage({
+              type: 'streamTokenUpdate',
+              tokens: totalTokens,
+              tps: parseFloat(tps.toFixed(1))
+            });
           },
           onDone: finalize,
         });
+
+
+
       } catch (streamErr) {
         console.warn(
           '⚠️ OpenAI streaming failed, falling back to non‐streaming:',

@@ -1,5 +1,7 @@
+//static/webviewScript/scrollUtils.js
 export let shouldAutoScroll = true;
 export let userInitiatedScroll = false;
+
 
 // Internal flag to ignore programmatic scroll events
 let isProgrammaticScroll = false;
