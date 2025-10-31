@@ -13,21 +13,18 @@ export function appendBubble(raw, cls, chatTokens, fileTokens = 0, skipRender = 
   const prefix = cls === 'user-message' ? 'You:' : 'Assistant:';
   const content = skipRender ? raw : renderMd(raw);
 
-  let tokenInfo = '';
-  if (chatTokens != null) {
-    tokenInfo = `🧮 ${chatTokens} tokens`;
-    if (fileTokens > 0) {
-      tokenInfo += ` + ${fileTokens} file context`;
-    }
-    tokenInfo = `<div class="token-count">${tokenInfo}</div>`;
-  }
-
-  bubble.innerHTML =
-    `<div class="markdown-body">
-       <strong>${prefix}</strong><br/>
-       ${content}
-       ${tokenInfo}
-     </div>`;
+  // Build bubble structure: content area + footer
+  bubble.innerHTML = `
+    <div class="markdown-body">
+      <strong>${prefix}</strong><br/>
+      ${content}
+    </div>
+    <div class="bubble-footer">
+      <div class="token-count">
+        ${chatTokens != null ? `🧮 ${chatTokens} tokens${fileTokens > 0 ? ` + ${fileTokens} file context` : ''}` : ''}
+      </div>
+    </div>
+  `;
 
   injectLinks(bubble);
   chat.appendChild(bubble);
@@ -70,14 +67,16 @@ export function setupChatSend(vscode) {
       vscode.postMessage({ type: 'stopGeneration' });
     }
   };
+
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      const textarea = e.target; 
+
       if (e.ctrlKey && !e.shiftKey) {
         // Handle Ctrl+Enter - insert newline
         e.preventDefault();
         e.stopPropagation();
 
-        const textarea = e.target;
         const start = textarea.selectionStart;
         const end = textarea.selectionEnd;
         const text = textarea.value;
@@ -98,5 +97,6 @@ export function setupChatSend(vscode) {
       }
     }
   });
+
 
 }

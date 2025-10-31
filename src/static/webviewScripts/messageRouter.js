@@ -12,6 +12,8 @@ import {
 } from './scrollUtils.js';
 import { renderMd, injectLinks } from './markdownUtils.js';
 
+let tokenUpdateTimer = null;
+
 // Track thinking state and chunk receipt
 let inThinkingBlock = false;
 let thinkingBuffer = '';
@@ -505,18 +507,47 @@ export function setupMessageRouter(vscode, contextSize) {
         updateFileContextTokens(tokens, contextSize);
         break;
 
-      case 'finalizeAI': {
+
+      case 'streamTokenUpdate': {
         const state = getStreamingState();
-        const { tokens } = ev.data;
-        if (state.assistantElem && typeof tokens === 'number') {
-          const tdiv = document.createElement('div');
-          tdiv.className = 'token-count';
-          tdiv.textContent = '🧮 ' + tokens + ' tokens';
-          state.assistantElem.querySelector('.markdown-body').appendChild(tdiv);
-          if (shouldAutoScroll) scrollToBottomImmediate(true);
+        if (state.assistantElem && typeof ev.data.tokens === 'number') {
+          const tokenDiv = state.assistantElem.querySelector('.token-count');
+          if (tokenDiv) {
+            let displayText = `🧮 ${ev.data.tokens} tokens`;
+            if (typeof ev.data.tps === 'number') {
+              displayText += ` (${ev.data.tps} TPS)`;
+            }
+            tokenDiv.textContent = displayText; // only text changes, no layout shift
+          }
         }
         break;
       }
+
+
+
+
+      case 'finalizeAI': {
+        const state = getStreamingState();
+        const { tokens, tps } = ev.data;
+        if (state.assistantElem && typeof tokens === 'number') {
+          // Check if token count already exists to avoid duplicates
+          const existingTokenDiv = state.assistantElem.querySelector('.token-count');
+          if (!existingTokenDiv) {
+            const tdiv = document.createElement('div');
+            tdiv.className = 'token-count';
+            let displayText = `🧮 ${tokens} tokens`;
+            if (typeof tps === 'number') {
+              displayText += ` (${tps} TPS)`;
+            }
+            tdiv.textContent = displayText;
+            state.assistantElem.querySelector('.markdown-body').appendChild(tdiv);
+            if (shouldAutoScroll) scrollToBottomImmediate(true);
+          }
+        }
+        break;
+      }
+
+
 
 
       case 'setModel': {

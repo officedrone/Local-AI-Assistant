@@ -1,19 +1,26 @@
 # Change Log
 
-## 0.0.26 – More Multi-file context implementation
+## 0.0.27 – UI fixes
+
+- FIX: ENTER button sends content to chat/LLM again (this broke when introducing CTRL + Enter for new line)
+- ADD: Token per second on LLM bubble
+- UPDATE: LLM bubble token count logic, tokens now display in separate container in the LLM bubble and feature realtime updates
+- UPDATE: Autoscroll logic to not go crazy when token counts update in the LLM bubble
+
+## 0.0.26 – Agent framework baseline, some UI enhancements, context load on new session enhancements
 
 - ADD: Agent framework + editFile tool (EXPERIMENTAL! Very early implementation so use at own risk) - Allow LLM to edit files in the workspace.
 - ADD: Capabilities framework, UI section
 - FIX: New session will always load 'fresh' files in the context. Also updated how/what files are loaded on new session based on previous context and what file is active when the new session was started.
 
-## 0.0.25 – More Multi-file context implementation
+## 0.0.25 – Rasoning support addition, token section updates, usability enhancements, styling fixes
 
 - ADD: Support for [THINK] [/THINK] reasoning
 - UPDATE: Session tokens section (Title, Think addition)
 - UPDATE: If model response takes longer than 10 secs, indicate it may be due to context processing.
 - UPDATE: Rework of styles.css to reduce spaghetti and overall size by 30/40%
 
-## 0.0.24 – More Multi-file context implementation
+## 0.0.24 – More Multi-file context fixes
 
 - FIX: Fix auto-added file context tokens not being counted on first turn
 - UPDATE: More sytling updates
