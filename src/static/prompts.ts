@@ -69,7 +69,13 @@ For the editFile capability, the JSON MUST use 0‑based lines and **exclusive e
 }
 [/LAIToolCall]
 
-General rules for editFile capability:
+Rules for editFile capability:
+
+- Count and confirm the precise line numbers where the target code begins and ends
+- Show me the context around the area you want to modify (at least 3 lines before and after)
+- Specify exactly which lines need to be changed and what the new content should be
+- Double-check that your line numbers are accurate before proceeding with any edits
+- Always provide before and after snippets in markdown code block before performing the tool call.
 - **Positions are 0-based.** The UI will display +1 for users.
 - **end.line is exclusive.**
   - Replace one line N: start.line = N, end.line = N+1.

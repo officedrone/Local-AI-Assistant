@@ -24,6 +24,7 @@ let noChunkTimer = null;
 let inToolCall = false;
 let toolBuffer = '';
 let scanBuffer = '';
+let preToolCallBuffer = '';
 
 // Initialize a global store for edit data
 window.storedEdits = {};
@@ -136,15 +137,32 @@ export function setupMessageRouter(vscode, contextSize) {
           if (openIdx !== -1) {
             inToolCall = true;
             toolBuffer = '';
-            scanBuffer = scanBuffer.slice(openIdx + openTag.length);
+            // Preserve any assistant text before the tool call
+            const preText = (state.assistantRaw || '') + scanBuffer.slice(0, openIdx);
             const body = state.assistantElem.querySelector('.markdown-body');
             if (body) {
-              body.innerHTML = `
+              // Build the bubble with the pre-tool-call explanation retained
+              const preDiv = document.createElement('div');
+              preDiv.className = 'pre-tool-call';
+              preDiv.innerHTML = renderMd(preText);
+              body.appendChild(preDiv);
+
+              // Add a stable tool-call section
+              const toolSection = document.createElement('div');
+              toolSection.className = 'tool-call-section';
+              toolSection.innerHTML = `
                 <div class="thinking-header">🔧 Tool call in progress…</div>
-                <div class="thinking-content"></div>
+                <div class="thinking-content">Receiving tool data…</div>
+                <div class="edit-previews-container"></div>
               `;
+              body.appendChild(toolSection);
+
             }
+            // Advance buffer past the open tag
+            scanBuffer = scanBuffer.slice(openIdx + openTag.length);
             state.assistantElem.classList.add('thinking');
+            // Reset assistantRaw since we’ve rendered preText
+            setStreamingState({ ...state, assistantElem: state.assistantElem, assistantRaw: '' });
           }
         }
 
@@ -152,32 +170,22 @@ export function setupMessageRouter(vscode, contextSize) {
           const combined = toolBuffer + scanBuffer;
           const closeIdx = combined.indexOf(closeTag);
           if (closeIdx !== -1) {
-            // Tool call complete
-            toolBuffer = combined.slice(0, closeIdx);
-            scanBuffer = combined.slice(closeIdx + closeTag.length);
+            // Tool call complete: extract pure JSON payload, strip tags
+            const payloadStr = combined.slice(0, closeIdx);
+            scanBuffer = combined.slice(closeIdx + closeTag.length); // discard close tag text
             inToolCall = false;
             state.assistantElem.classList.remove('pulsing');
+
+            // Update header only; do NOT overwrite bubble content or inject raw JSON here
             const body = state.assistantElem.querySelector('.markdown-body');
             if (body) {
-              body.innerHTML = `
-                <div class="thinking-header">🔧 Tool call complete</div>
-                <details open>
-                  <summary>Show JSON payload</summary>
-                  <pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-                </details>
-              `;
+              const header = body.querySelector('.thinking-header');
+              if (header) header.textContent = '🔧 Tool call complete';
             }
 
             try {
-              const normalized = toolBuffer.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+              const normalized = payloadStr.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
               const parsedTool = JSON.parse(normalized);
-
-              // Build raw after-text (content)
-              const content = Array.isArray(parsedTool.edits)
-                ? parsedTool.edits.map(e => (typeof e.newText === 'string' ? e.newText : '')).join('\n')
-                : '';
-
-              // Ask the extension to generate the diff preview string
               vscode.postMessage({
                 type: 'requestPreview',
                 data: {
@@ -186,19 +194,21 @@ export function setupMessageRouter(vscode, contextSize) {
                 }
               });
             } catch (e) {
-              if (body) {
-                body.innerHTML += `<pre class="tool-error">Tool parse error: ${String(e)}</pre>`;
+              const body2 = state.assistantElem.querySelector('.markdown-body');
+              if (body2) {
+                body2.innerHTML += `<pre class="tool-error">Tool parse error: ${String(e)}</pre>`;
               }
             }
 
             toolBuffer = '';
           } else {
+            // Accumulate tool payload silently; do not render raw JSON buffer
             toolBuffer = combined;
             scanBuffer = '';
             const body = state.assistantElem.querySelector('.markdown-body');
-            let contentEl = body && body.querySelector('.thinking-content');
+            const contentEl = body && body.querySelector('.thinking-content');
             if (contentEl) {
-              contentEl.innerHTML = `<pre>${toolBuffer.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+              contentEl.textContent = 'Receiving tool data…';
               if (contentEl.dataset.autoScroll === 'true') {
                 contentEl.scrollTop = contentEl.scrollHeight;
               }
@@ -207,6 +217,7 @@ export function setupMessageRouter(vscode, contextSize) {
             return;
           }
         }
+
 
         // ---------- Normal streaming ----------
         function hasPotentialTagFragment(buffer, openTag, closeTag) {
@@ -242,149 +253,144 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
       }
 
+
       case 'editPreview': {
         console.log('WEBVIEW ← editPreview', ev.data);
         const { content, uri, edits, preview } = ev.data;
 
         // ensure global store exists
         window.storedEdits = window.storedEdits || {};
-        window.storedEdits[uri] = typeof edits === 'string' ? JSON.parse(edits) : edits;
+        try {
+          window.storedEdits[uri] = Array.isArray(edits)
+            ? edits
+            : (typeof edits === 'string' ? JSON.parse(edits) : []);
+        } catch {
+          window.storedEdits[uri] = edits;
+        }
 
-        // Get the assistant bubble (last one or create new if needed)
-        const assistantBubbles = document.querySelectorAll('.ai-message');
-        const assistantBubble = assistantBubbles.length
-          ? assistantBubbles[assistantBubbles.length - 1]
-          : document.body;
+        // Always use the active assistant bubble from streaming state
+        const { assistantElem } = getStreamingState();
+        if (!assistantElem) {
+          console.warn('No active assistant bubble for editPreview');
+          break;
+        }
+        const assistantBubble = assistantElem;
 
         // Ensure bubble has a stable ID
         const bubbleId = assistantBubble.id || `bubble-${Date.now()}`;
         if (!assistantBubble.id) assistantBubble.id = bubbleId;
 
-        // Collapse any JSON payload <details> before rendering preview
-        const jsonDetails = assistantBubble.querySelector('details');
-        if (jsonDetails) {
-          jsonDetails.removeAttribute('open');
-        }
-
-        // Store this edit in the pendingEdits map
+        // Prepare pending edits per bubble
         if (!pendingEdits.has(bubbleId)) {
           pendingEdits.set(bubbleId, []);
         }
         const bubblePendingEdits = pendingEdits.get(bubbleId);
-        const existingIndex = bubblePendingEdits.findIndex(edit => edit.uri === uri);
-        if (existingIndex === -1) {
-          bubblePendingEdits.push({ uri, content, edits, preview });
-        } else {
-          bubblePendingEdits[existingIndex] = { uri, content, edits, preview };
-        }
+        bubblePendingEdits.push({ uri, content, edits, preview });
 
-        // 🔑 Ensure a container exists for multiple previews
+        // Ensure container exists under the same bubble, below the tool header/content
         const body = assistantBubble.querySelector('.markdown-body') || assistantBubble;
         let previewContainer = assistantBubble.querySelector('.edit-previews-container');
         if (!previewContainer) {
           previewContainer = document.createElement('div');
           previewContainer.className = 'edit-previews-container';
-
-          const tokenDiv = body.querySelector('.token-count');
-          if (tokenDiv && tokenDiv.parentNode === body) {
-            body.insertBefore(previewContainer, tokenDiv);
-          } else if (body.firstChild) {
-            const header = body.querySelector('.thinking-header');
-            if (header && header.parentNode === body && header.nextSibling) {
-              body.insertBefore(previewContainer, header.nextSibling);
-            } else {
-              body.insertBefore(previewContainer, body.firstChild);
-            }
-          } else {
-            body.appendChild(previewContainer);
-          }
+          body.appendChild(previewContainer);
         }
 
-        // Clear and re-render all pending edits for this bubble
-        previewContainer.innerHTML = '';
-        bubblePendingEdits.forEach(({ uri, content, preview }) => {
-          const previewDiv = document.createElement('div');
-          previewDiv.className = 'edit-preview';
-          previewDiv.dataset.uri = uri;
+        // Append a single new preview section (do NOT clear container)
+        const previewDiv = document.createElement('div');
+        previewDiv.className = 'edit-preview';
+        previewDiv.dataset.uri = uri;
 
-          const title = document.createElement('strong');
-          title.textContent = `Proposed Changes for ${uri}:`;
-          previewDiv.appendChild(title);
+        const title = document.createElement('strong');
+        title.textContent = `Proposed Changes for ${uri}:`;
+        previewDiv.appendChild(title);
 
-          if (content) {
-            const afterPre = document.createElement('pre');
-            afterPre.className = 'edit-preview-after';
-            afterPre.textContent = content;
-            previewDiv.appendChild(afterPre);
+        // JSON payload per edit section
+        const details = document.createElement('details');
+        // leave closed by default
+        const summary = document.createElement('summary');
+        summary.textContent = 'Show JSON payload (JSON lines are 0-based)';
+        const pre = document.createElement('pre');
+        try {
+          pre.textContent = JSON.stringify(window.storedEdits[uri], null, 2);
+        } catch {
+          pre.textContent = String(edits);
+        }
+        details.appendChild(summary);
+        details.appendChild(pre);
+        previewDiv.appendChild(details);
+
+        if (content) {
+          const afterPre = document.createElement('pre');
+          afterPre.className = 'edit-preview-after';
+          afterPre.textContent = content;
+          previewDiv.appendChild(afterPre);
+        }
+
+        if (preview) {
+          const diffPre = document.createElement('pre');
+          diffPre.className = 'edit-preview-diff';
+          diffPre.textContent = preview;
+          previewDiv.appendChild(diffPre);
+        }
+
+        const approveBtn = document.createElement('button');
+        approveBtn.className = 'approve-edit';
+        approveBtn.dataset.uri = uri;
+        approveBtn.textContent = 'Approve Edit';
+        previewDiv.appendChild(approveBtn);
+
+        const rejectBtn = document.createElement('button');
+        rejectBtn.className = 'reject-edit';
+        rejectBtn.dataset.uri = uri;
+        rejectBtn.textContent = 'Reject Edit';
+        previewDiv.appendChild(rejectBtn);
+
+        // Button handlers
+        previewDiv.addEventListener('click', (e) => {
+          const t = e.target;
+
+          if (t && t.classList && t.classList.contains('approve-edit')) {
+            const key = t.dataset.uri;
+            const payload = window.storedEdits[key];
+
+            t.disabled = true;
+            t.textContent = 'Edit Approved';
+            t.classList.add('approved');
+
+            const r = previewDiv.querySelector('.reject-edit');
+            if (r) r.remove();
+
+            vscode.postMessage({
+              type: 'confirmEdit',
+              data: { uri: key, edits: payload }
+            });
+            return;
           }
 
-          if (preview) {
-            const diffPre = document.createElement('pre');
-            diffPre.className = 'edit-preview-diff';
-            diffPre.textContent = preview;
-            previewDiv.appendChild(diffPre);
+          if (t && t.classList && t.classList.contains('reject-edit')) {
+            const key = t.dataset.uri;
+
+            t.disabled = true;
+            t.textContent = 'Edit Rejected';
+            t.classList.add('rejected');
+
+            const a = previewDiv.querySelector('.approve-edit');
+            if (a) a.remove();
+
+            vscode.postMessage({
+              type: 'rejectEdit',
+              data: { uri: key }
+            });
+            return;
           }
-
-          const approveBtn = document.createElement('button');
-          approveBtn.className = 'approve-edit';
-          approveBtn.dataset.uri = uri;
-          approveBtn.textContent = 'Approve Edit';
-          previewDiv.appendChild(approveBtn);
-
-          const rejectBtn = document.createElement('button');
-          rejectBtn.className = 'reject-edit';
-          rejectBtn.dataset.uri = uri;
-          rejectBtn.textContent = 'Reject Edit';
-          previewDiv.appendChild(rejectBtn);
-
-          // Button handlers
-          previewDiv.addEventListener('click', (e) => {
-            const t = e.target;
-
-            if (t && t.classList && t.classList.contains('approve-edit')) {
-              const key = t.dataset.uri;
-              const payload = window.storedEdits[key];
-
-            // Disable approve and show confirmation state
-              t.disabled = true;
-              t.textContent = 'Edit Approved';
-              t.classList.add('approved');
-
-            // Disable reject if present to lock the choice
-              const rejectBtn = previewDiv.querySelector('.reject-edit');
-              if (rejectBtn) rejectBtn.remove();
-
-              vscode.postMessage({
-                type: 'confirmEdit',
-                data: { uri: key, edits: payload }
-              });
-              return;
-            }
-
-            if (t && t.classList && t.classList.contains('reject-edit')) {
-              const key = t.dataset.uri;
-
-            // Show rejected state and disable both buttons
-              t.disabled = true;
-              t.textContent = 'Edit Rejected';
-              t.classList.add('rejected');
-
-              const approveBtn = previewDiv.querySelector('.approve-edit');
-              if (approveBtn) approveBtn.remove();
-
-              vscode.postMessage({
-                type: 'rejectEdit',
-                data: { uri: key }
-              });
-              return;
-            }
-          });
-
-          previewContainer.appendChild(previewDiv);
         });
 
+        previewContainer.appendChild(previewDiv);
         break;
       }
+
+
 
 
 
@@ -467,27 +473,28 @@ export function setupMessageRouter(vscode, contextSize) {
         const state = getStreamingState();
 
         if (state.assistantElem) {
+          // Only adjust styling; keep existing content (pre-tool text + previews)
           state.assistantElem.classList.remove('thinking', 'pulsing');
-          // If nothing was streamed, replace the placeholder with a clear message
-          if (!hasReceivedChunk) {
-            const body = state.assistantElem.querySelector('.markdown-body');
+
+          const body = state.assistantElem.querySelector('.markdown-body');
+          if (!hasReceivedChunk && body) {
             body.innerHTML = `<strong>Assistant:</strong><i><br/>
               <span class="status-reason">&lt; No response received from LLM. Verify the URL, API, and model are correct. &gt;</span>`;
             if (shouldAutoScroll) {
               scrollToBottomImmediate(true);
             }
+          } else if (body) {
+            const header = body.querySelector('.thinking-header');
+            if (header) header.textContent = '🔧 Tool call complete';
           }
-
-          // Remove thinking or pulsing style
-          state.assistantElem.classList.remove('thinking');
-          state.assistantElem.classList.remove('pulsing');
         }
 
         inThinkingBlock = false;
         thinkingBuffer = '';
         hasReceivedChunk = false;
 
-        setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
+        // End stream but keep the assistant bubble reference; do NOT null it
+        setStreamingState({ isStreaming: false, assistantElem: state.assistantElem, assistantRaw: '' });
         document.getElementById('sendButton').textContent = 'Send';
         break;
       }
@@ -665,7 +672,7 @@ export function setupMessageRouter(vscode, contextSize) {
               body.innerHTML = `
                 <div class="thinking-header">🔧 Tool call complete</div>
                 <details>
-                  <summary>Show JSON payload</summary>
+                  <summary>Show JSON payload (lines in JSON payload are 0-based)</summary>
                   <pre>${pretty.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
                 </details>
               `;
