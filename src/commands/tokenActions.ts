@@ -43,7 +43,7 @@ export function countTextTokens(text: string): number {
 /** Count tokens in all files currently in context, regardless of checkbox. */
 export function getFileContextTokens(): number {
   return getContextFiles()
-    .map(f => countTextTokens(f.content))
+    .map(f => countTextTokens(f.lines.map(l => l.text).join('\n')))
     .reduce((a, b) => a + b, 0);
 }
 

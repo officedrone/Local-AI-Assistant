@@ -8,7 +8,8 @@ import {
   removeFileFromContext,
   addAllOpenEditorsToContext,
   clearContextFiles,
-  getContextFiles
+  getContextFiles,
+  extractRelevantSlices
 } from './chatPanelContext';
 
 
@@ -527,10 +528,12 @@ async function handleSendToAI(
     fileContexts: getContextFiles().map(f => ({
       uri: f.uri.toString(),
       language: f.language,
-      content: f.content
+      summary: f.summary,
+      slices: extractRelevantSlices(f, userMessage)
     })),
+
     language,
-    // 🔑 Pass through current capabilities
+    // Pass through current capabilities
     capabilities: { editFile: canEditFiles() }
   };
 

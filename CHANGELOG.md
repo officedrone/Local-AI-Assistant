@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.0.29 – API Key usage fix
+
+- UPDATE: Update how context works - from raw file‑string context to a structured model using summaries, line‑indexed slices, and updated prompt plumbing to support deterministic LLM edits using the editFile experimental tool.
+
 ## 0.0.28 – API Key usage fix
 
 - FIX: API key not being retrieved correctly resulting in 401
