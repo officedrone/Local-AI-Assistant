@@ -4,7 +4,7 @@
   "description": "This extension leverages locally-running Ollama or OpenAI endpoints to provide chat, code completion, and code valiation functionality",
   "publisher": "officedrone",
   "icon": "media/icon.png",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "repository": {
     "type": "git",
     "url": "https://github.com/officedrone/local-ai-assistant"
@@ -23,7 +23,7 @@
     "Chat",
     "Other"
   ],
-    "keywords": [
+  "keywords": [
     "LLM",
     "AI",
     "Assistant",
@@ -109,7 +109,6 @@
         "title": "Add Current File to Context",
         "category": "Local AI Assistant"
       }
-
     ],
     "keybindings": [
       {
@@ -152,7 +151,6 @@
         "key": "ctrl+shift+alt+z",
         "mac": "cmd+shift+alt+z"
       }
-
     ],
     "submenus": [
       {
@@ -232,7 +230,6 @@
           "default": false,
           "description": "Allow the LLM to request and apply edits to files."
         }
-        
       }
     }
   },

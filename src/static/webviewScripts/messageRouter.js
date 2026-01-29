@@ -258,58 +258,38 @@ export function setupMessageRouter(vscode, contextSize) {
         console.log('WEBVIEW ← editPreview', ev.data);
         const { content, uri, edits, preview } = ev.data;
 
-        // ensure global store exists
+        // ----- Global store for the raw payload (unchanged) -----
         window.storedEdits = window.storedEdits || {};
         try {
-          window.storedEdits[uri] = Array.isArray(edits)
-            ? edits
-            : (typeof edits === 'string' ? JSON.parse(edits) : []);
+          window.storedEdits[uri] =
+            Array.isArray(edits) ? edits : typeof edits === 'string' ? JSON.parse(edits) : [];
         } catch {
           window.storedEdits[uri] = edits;
         }
 
-        // Always use the active assistant bubble from streaming state
+        // ----- Get the active assistant bubble (the one that emitted the tool call) -----
         const { assistantElem } = getStreamingState();
-        if (!assistantElem) {
-          console.warn('No active assistant bubble for editPreview');
-          break;
-        }
-        const assistantBubble = assistantElem;
+        if (!assistantElem) break;
 
-        // Ensure bubble has a stable ID
-        const bubbleId = assistantBubble.id || `bubble-${Date.now()}`;
-        if (!assistantBubble.id) assistantBubble.id = bubbleId;
+        // Ensure a stable id for the bubble
+        const bubbleId = assistantElem.id || `bubble-${Date.now()}`;
+        if (!assistantElem.id) assistantElem.id = bubbleId;
 
-        // Prepare pending edits per bubble
-        if (!pendingEdits.has(bubbleId)) {
-          pendingEdits.set(bubbleId, []);
-        }
-        const bubblePendingEdits = pendingEdits.get(bubbleId);
-        bubblePendingEdits.push({ uri, content, edits, preview });
+        // ----- Create a **unique** preview‑wrapper for this tool call -----
+        const previewWrapper = document.createElement('div');
+        previewWrapper.className = 'edit-preview-wrapper';
+        // give it its own id so we can delete it later without touching siblings
+        previewWrapper.dataset.previewId = `preview-${Date.now()}`;
 
-        // Ensure container exists under the same bubble, below the tool header/content
-        const body = assistantBubble.querySelector('.markdown-body') || assistantBubble;
-        let previewContainer = assistantBubble.querySelector('.edit-previews-container');
-        if (!previewContainer) {
-          previewContainer = document.createElement('div');
-          previewContainer.className = 'edit-previews-container';
-          body.appendChild(previewContainer);
-        }
-
-        // Append a single new preview section (do NOT clear container)
-        const previewDiv = document.createElement('div');
-        previewDiv.className = 'edit-preview';
-        previewDiv.dataset.uri = uri;
-
+        // ----- Title ---------------------------------------------------------
         const title = document.createElement('strong');
         title.textContent = `Proposed Changes for ${uri}:`;
-        previewDiv.appendChild(title);
+        previewWrapper.appendChild(title);
 
-        // JSON payload per edit section
+        // ----- JSON payload (collapsible) ------------------------------------
         const details = document.createElement('details');
-        // leave closed by default
         const summary = document.createElement('summary');
-        summary.textContent = 'Show JSON payload (JSON lines are 0-based)';
+        summary.textContent = 'Show JSON payload (JSON lines are 0‑based)';
         const pre = document.createElement('pre');
         try {
           pre.textContent = JSON.stringify(window.storedEdits[uri], null, 2);
@@ -318,77 +298,96 @@ export function setupMessageRouter(vscode, contextSize) {
         }
         details.appendChild(summary);
         details.appendChild(pre);
-        previewDiv.appendChild(details);
+        previewWrapper.appendChild(details);
 
+        // ----- After‑preview (the LLM’s textual explanation) -----------------
         if (content) {
           const afterPre = document.createElement('pre');
           afterPre.className = 'edit-preview-after';
           afterPre.textContent = content;
-          previewDiv.appendChild(afterPre);
+          previewWrapper.appendChild(afterPre);
         }
 
+        // ----- Diff preview --------------------------------------------------
         if (preview) {
           const diffPre = document.createElement('pre');
           diffPre.className = 'edit-preview-diff';
           diffPre.textContent = preview;
-          previewDiv.appendChild(diffPre);
+          previewWrapper.appendChild(diffPre);
         }
 
+        // ----- Approve / Reject buttons --------------------------------------
         const approveBtn = document.createElement('button');
         approveBtn.className = 'approve-edit';
         approveBtn.dataset.uri = uri;
         approveBtn.textContent = 'Approve Edit';
-        previewDiv.appendChild(approveBtn);
+        previewWrapper.appendChild(approveBtn);
 
         const rejectBtn = document.createElement('button');
         rejectBtn.className = 'reject-edit';
         rejectBtn.dataset.uri = uri;
         rejectBtn.textContent = 'Reject Edit';
-        previewDiv.appendChild(rejectBtn);
+        previewWrapper.appendChild(rejectBtn);
 
-        // Button handlers
-        previewDiv.addEventListener('click', (e) => {
+        // ----- Click handling (only removes *this* wrapper) -----------------
+        previewWrapper.addEventListener('click', (e) => {
           const t = e.target;
+          if (!t || !t.classList) return;
 
-          if (t && t.classList && t.classList.contains('approve-edit')) {
+          if (t.classList.contains('approve-edit')) {
             const key = t.dataset.uri;
             const payload = window.storedEdits[key];
-
             t.disabled = true;
             t.textContent = 'Edit Approved';
             t.classList.add('approved');
 
-            const r = previewDiv.querySelector('.reject-edit');
-            if (r) r.remove();
+            // remove the reject button for this preview only
+            const rejectBtn = previewWrapper.querySelector('.reject-edit');
+            if (rejectBtn) rejectBtn.remove();
 
             vscode.postMessage({
               type: 'confirmEdit',
               data: { uri: key, edits: payload }
             });
-            return;
           }
 
-          if (t && t.classList && t.classList.contains('reject-edit')) {
+          if (t.classList.contains('reject-edit')) {
             const key = t.dataset.uri;
-
             t.disabled = true;
             t.textContent = 'Edit Rejected';
             t.classList.add('rejected');
 
-            const a = previewDiv.querySelector('.approve-edit');
-            if (a) a.remove();
+            // remove the approve button for this preview only
+            const approveBtn = previewWrapper.querySelector('.approve-edit');
+            if (approveBtn) approveBtn.remove();
 
             vscode.postMessage({
               type: 'rejectEdit',
               data: { uri: key }
             });
-            return;
           }
         });
 
-        previewContainer.appendChild(previewDiv);
+        // ----- Insert the wrapper into the bubble ----------------------------
+        // We keep a dedicated container for *all* previews so that later
+        // previews are added below previous ones, but each preview lives in its
+        // own element.
+        let container = assistantElem.querySelector('.edit-previews-container');
+        if (!container) {
+          container = document.createElement('div');
+          container.className = 'edit-previews-container';
+          const body = assistantElem.querySelector('.markdown-body') || assistantElem;
+          body.appendChild(container);
+        }
+        container.appendChild(previewWrapper);
+
+        // ----- Keep a reference for potential future use (optional) ----------
+        if (!pendingEdits.has(bubbleId)) pendingEdits.set(bubbleId, []);
+        const bubblePending = pendingEdits.get(bubbleId);
+        bubblePending.push({ uri, content, edits, preview });
         break;
       }
+
 
 
 

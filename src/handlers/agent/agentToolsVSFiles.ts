@@ -35,11 +35,21 @@ function ensureEndsWithNewline(text: string) {
  */
 function normalizeEdits(edits: EditChange[], doc: vscode.TextDocument): EditChange[] {
   return (edits || []).map(e => {
+    // ----- start -----
     const startLine = clamp(e.start.line, 0, doc.lineCount - 1);
-    const endLine   = clamp(e.end?.line ?? startLine, 0, doc.lineCount - 1);
-
     const startChar = e.start.character ?? 0;
-    const endChar   = e.end?.character ?? doc.lineAt(endLine).text.length;
+
+    // ----- end (exclusive) -----
+    // If the LLM omitted `end`, we treat it as an INSERT at `startLine`.
+    const rawEndLine = e.end?.line;
+    const endLine = typeof rawEndLine === 'number'
+      ? clamp(rawEndLine, startLine, doc.lineCount)   // keep exclusive semantics
+      : startLine;                                   // empty range → insert
+
+    // Character offset for the end position – if supplied use it,
+    // otherwise default to the line length (for REPLACE ranges).
+    const endChar = e.end?.character ??
+      (rawEndLine !== undefined ? doc.lineAt(endLine).text.length : 0);
 
     return {
       start: { line: startLine, character: startChar },
@@ -49,12 +59,8 @@ function normalizeEdits(edits: EditChange[], doc: vscode.TextDocument): EditChan
   });
 }
 
-
-
 /**
  * Write a temporary file for diff previews.
- * Files are stored in the system temp dir under "local-ai-assistant-previews"
- * and prefixed with "LocalAIAssistantPreview-".
  */
 async function writeTempFile(filenameHint: string, contents: string) {
   const tempDir = path.join(os.tmpdir(), 'local-ai-assistant-previews');
@@ -94,10 +100,20 @@ export async function cleanupOldPreviews() {
 }
 
 /**
- * Handle an editFile message from the webview.
+ * **Fix 2 – Apply edits sequentially (bottom‑up).**
+ *
+ * VS Code’s `WorkspaceEdit` applies the edits in the order they are added.
+ * By sorting the normalised edits **descending by start line** and then adding
+ * them to a single `WorkspaceEdit`, we guarantee that each edit sees the
+ * document state produced by all higher‑line edits, eliminating the growing
+ * drift you observed.
+ *
+ * An optional overlap guard is also included – if two edits intersect the UI
+ * receives an error instead of silently failing.
  */
 export async function handleEditMessage(msg: EditMessage, webview: vscode.Webview) {
   try {
+    // ----- basic validation -------------------------------------------------
     if (!msg || typeof msg.uri !== 'string') {
       webview.postMessage({
         type: 'editResult',
@@ -121,19 +137,50 @@ export async function handleEditMessage(msg: EditMessage, webview: vscode.Webvie
       return;
     }
 
+    // ----- normalise & sort (bottom‑up) ------------------------------------
     const editsNorm = normalizeEdits(msg.edits, doc)
       .slice()
-      .sort((a, b) => b.start.line - a.start.line);
+      .sort((a, b) => {
+        // larger start line first; if equal, larger end line first
+        if (b.start.line !== a.start.line) return b.start.line - a.start.line;
+        return (b.end?.line ?? 0) - (a.end?.line ?? 0);
+      });
 
+    // ----- optional overlap guard -------------------------------------------
+    function rangesOverlap(x: EditChange, y: EditChange): boolean {
+      // half‑open intervals [start, end)
+      const xStart = x.start.line;
+      const xEnd   = x.end?.line ?? x.start.line; // exclusive
+      const yStart = y.start.line;
+      const yEnd   = y.end?.line ?? y.start.line;
+
+      return !(xEnd <= yStart || yEnd <= xStart);
+    }
+
+    for (let i = 0; i < editsNorm.length - 1; ++i) {
+      if (rangesOverlap(editsNorm[i], editsNorm[i + 1])) {
+        webview.postMessage({
+          type: 'editResult',
+          uri: uri.toString(),
+          success: false,
+          error:
+            `Overlapping edits detected between lines ${editsNorm[i].start.line} and ${editsNorm[i + 1].start.line}`
+        });
+        return;
+      }
+    }
+
+    // ----- build WorkspaceEdit -----------------------------------------------
     const workspaceEdit = new vscode.WorkspaceEdit();
 
     for (const e of editsNorm) {
-      const start = new vscode.Position(e.start.line, 0);
-      const end   = new vscode.Position(e.end.line, 0); // exclusive
-      const replacement = ensureEndsWithNewline(e.newText ?? '');
-      workspaceEdit.replace(uri, new vscode.Range(start, end), replacement);
+      const startPos = new vscode.Position(e.start.line, e.start.character ?? 0);
+      const endPos   = new vscode.Position(e.end.line,   e.end.character ?? 0); // exclusive
+      const replacement = ensureEndsWithNewline(e.newText);
+      workspaceEdit.replace(uri, new vscode.Range(startPos, endPos), replacement);
     }
 
+    // ----- apply -------------------------------------------------------------
     const success = await vscode.workspace.applyEdit(workspaceEdit);
     webview.postMessage({
       type: 'editResult',
@@ -160,16 +207,13 @@ export async function handleRequestPreview(uri: string, edits: EditChange[], web
     const doc = await vscode.workspace.openTextDocument(vscodeUri);
     const originalText = doc.getText();
 
-    // Normalize edits before preview
+    // Normalize edits before preview (uses the same exclusive‑end logic)
     const editsNorm = normalizeEdits(edits, doc);
 
     const preview = generateEditPreview(editsNorm, originalText);
     const content = editsNorm.map(e => e.newText).join('\n');
 
     webview.postMessage({ type: 'editPreview', uri, content, edits: editsNorm, preview });
-
-    // Optional: native VS Code diff view (uncomment to enable)
-    // ...
   } catch (err) {
     webview.postMessage({
       type: 'editPreview',
@@ -182,8 +226,12 @@ export async function handleRequestPreview(uri: string, edits: EditChange[], web
 }
 
 /**
- * Generate a human-readable preview of file edits.
- * Backend is 0-based exclusive, but display is 1-based inclusive.
+ * Generate a human‑readable preview of file edits.
+ * Backend is 0‑based exclusive, but display is 1‑based inclusive.
+ *
+ * **Fix 3 & 4** – No changes needed here.  
+ * The function already adds `+1` only for UI rendering and keeps the internal
+ * representation exclusive, which matches the normalised edits above.
  */
 export function generateEditPreview(edits: EditChange[], docText?: string): string {
   if (!edits || edits.length === 0) return 'No changes to preview';
@@ -191,15 +239,13 @@ export function generateEditPreview(edits: EditChange[], docText?: string): stri
   const lines: string[] = [];
 
   for (const [index, edit] of edits.entries()) {
-    const startLine = edit.start.line; // 0-based
+    const startLine = edit.start.line; // 0‑based
     const endExcl   = edit.end.line;   // exclusive
     const start1 = startLine + 1;
-    const endIncl = endExcl - 1;       // last included line (0-based)
-    const end1 = endIncl + 1;          // display as 1-based
+    const endIncl = endExcl - 1;       // last included line (0‑based)
+    const end1 = endIncl + 1;          // display as 1‑based
 
-    const range = endIncl === startLine
-      ? `${start1}`
-      : `${start1}-${end1}`;
+    const range = endIncl === startLine ? `${start1}` : `${start1}-${end1}`;
 
     const before = docLines.length
       ? docLines.slice(startLine, endExcl) // exclusive end
