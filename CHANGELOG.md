@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.0.28 – API Key usage fix
+
+- FIX: API key not being retrieved correctly resulting in 401
+
 ## 0.0.27 – UI fixes
 
 - FIX: ENTER button sends content to chat/LLM again (this broke when introducing CTRL + Enter for new line)

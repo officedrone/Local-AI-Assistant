@@ -95,6 +95,9 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(onConfigChange);
+  return { 
+    getSecret: (key: string) => context.secrets.get(key) 
+  };
 }
 
 export function deactivate() {
@@ -118,7 +121,7 @@ function registerSetApiUrlCommand(context: vscode.ExtensionContext) {
             new URL(input);
             return null;
           } catch {
-            return 'Please enter a valid URL (must include protocol)';
+            return 'Please enter a valid URL in format http(s)://<URL>:<Port>';
           }
         }
       });
