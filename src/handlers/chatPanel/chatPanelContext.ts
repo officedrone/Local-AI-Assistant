@@ -8,7 +8,8 @@ import { countTextTokens } from '../../commands/tokenActions';
 export interface FileContext {
   uri: vscode.Uri;
   language: string;
-  content: string;
+  lines: { n: number; text: string }[];
+  summary: string;
   tokens: number;
 }
 
@@ -49,12 +50,15 @@ export async function addFileToContext(uri: vscode.Uri, forceReload: boolean = f
   if (forceReload) {
     contextFiles = contextFiles.filter(f => f.uri.toString() !== uri.toString());
   }
+  const text = doc.getText();
+  const lines = text.split(/\r?\n/).map((t, i) => ({ n: i + 1, text: t }));
 
   contextFiles.push({
     uri,
     language: doc.languageId,
-    content: doc.getText(),
-    tokens: countTextTokens(doc.getText())
+    lines,
+    summary: await generateFileSummary(text, doc.languageId),
+    tokens: countTextTokens(text)
   });
   notifyContextUpdated();
 }
@@ -122,9 +126,37 @@ function notifyContextUpdated() {
       files: getContextFiles().map(f => ({
         uri: f.uri.toString(),
         language: f.language,
-        tokens: countTextTokens(f.content)
+        tokens: f.tokens
       }))
     });
     postFileContextTokens(panel);
   }
+}
+
+//Summary generator
+async function generateFileSummary(text: string, language: string): Promise<string> {
+  const firstLines = text.split(/\r?\n/).slice(0, 20).join("\n");
+  return `Summary of ${language} file:\n${firstLines}`;
+}
+
+//Slice Extractor
+export function extractRelevantSlices(
+  file: FileContext,
+  userMessage: string,
+  padding = 30
+) {
+  const hits = file.lines.filter(l =>
+    userMessage.includes(l.text.trim())
+  );
+
+  if (hits.length === 0) return [];
+
+  const min = Math.max(1, hits[0].n - padding);
+  const max = Math.min(file.lines.length, hits[hits.length - 1].n + padding);
+
+  return [{
+    startLine: min,
+    endLine: max,
+    lines: file.lines.slice(min - 1, max)
+  }];
 }

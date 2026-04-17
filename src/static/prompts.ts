@@ -17,16 +17,36 @@ const getMaxThinkTokens = (contextSize?: number): number => {
 
 /**
  * Utility: format one or more file contexts into a single string.
+ * Updated to use summary + slices instead of full content.
  */
 export function formatFileContexts(
-  contexts?: { uri: string; language: string; content: string }[]
+  contexts?: {
+    uri: string;
+    language: string;
+    summary: string;
+    slices: {
+      startLine: number;
+      endLine: number;
+      lines: { n: number; text: string }[];
+    }[];
+  }[]
 ): string | undefined {
   if (!contexts || contexts.length === 0) return undefined;
+
   return contexts
-    .map(
-      (f) =>
-        `// File: ${f.uri}\n\`\`\`${f.language}\n${f.content.trim()}\n\`\`\``
-    )
+    .map((f) => {
+      let out = `// File: ${f.uri}\nSummary:\n${f.summary.trim()}\n`;
+
+      for (const slice of f.slices) {
+        out += `\nSlice ${slice.startLine}-${slice.endLine}:\n\`\`\`${f.language}\n`;
+        for (const line of slice.lines) {
+          out += `${line.n}: ${line.text}\n`;
+        }
+        out += `\`\`\`\n`;
+      }
+
+      return out;
+    })
     .join('\n\n');
 }
 
@@ -90,6 +110,9 @@ Rules for editFile capability:
   - If you need to add more lines, use a separate INSERT edit.
 - **Always match line identation when replacing lines.
 - **Always align line identation with surrounding code when inserting new line.
+- Do NOT introduce unintended blank lines.Every line in newText must contain meaningful content unless the user explicitly asked for a blank line. Never replace an existing line with an empty string unless the user requested deletion.
+- When inserting a line, do NOT modify the line immediately after the insertion point. That line must remain exactly unchanged unless the user explicitly requests otherwise.
+
 - **Use "newText"** as the key for inserted or replacement text. Do not invent other keys (range, text, filePath, changes).
 - Prefer **multiple small edits** rather than replacing the entire file.
 - Determine if you need to make changes across multiple files. If so, make multiple tool calls.
@@ -114,13 +137,19 @@ Rules for editFile capability:
 `.trim();
 }
 
-
-
-
 // ---------- Chat Prompt ----------
 export const chatPrompt = (
   language: string,
-  fileContexts?: { uri: string; language: string; content: string }[],
+  fileContexts?: {
+    uri: string;
+    language: string;
+    summary: string;
+    slices: {
+      startLine: number;
+      endLine: number;
+      lines: { n: number; text: string }[];
+    }[];
+  }[],
   contextSize?: number,
   capabilities: { [key: string]: boolean } = {}
 ): string => {
@@ -166,7 +195,16 @@ ${code.trim()}
 
 export const validationPrompt = (
   code: string,
-  contexts?: { uri: string; language: string; content: string }[],
+  contexts?: {
+    uri: string;
+    language: string;
+    summary: string;
+    slices: {
+      startLine: number;
+      endLine: number;
+      lines: { n: number; text: string }[];
+    }[];
+  }[],
   language: string = 'plaintext',
   contextSize?: number,
   capabilities: { [key: string]: boolean } = {}
@@ -218,7 +256,16 @@ ${code.trim()}
 
 export const completionPrompt = (
   code: string,
-  contexts?: { uri: string; language: string; content: string }[],
+  contexts?: {
+    uri: string;
+    language: string;
+    summary: string;
+    slices: {
+      startLine: number;
+      endLine: number;
+      lines: { n: number; text: string }[];
+    }[];
+  }[],
   language: string = 'plaintext',
   contextSize?: number,
   capabilities: { [key: string]: boolean } = {}
@@ -252,6 +299,6 @@ After closing </think>, follow these instructions for your final answer:
 
 ${formatted ? `Reference contexts:\n${formatted}` : ''}
 
-Code to complete:\n\`\`\`${language}\n${code.trim()}\n\`\
+Code to complete:\n\`\`\`${language}\n${code.trim()}\n\`\`\`
 `;
 };

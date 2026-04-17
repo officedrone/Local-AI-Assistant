@@ -9,11 +9,16 @@ import {
   chatPrompt
 } from '../static/prompts';
 
-// Shape expected by prompts.ts (string URIs)
+// Updated shape expected by prompts.ts
 export interface NormalizedFileContext {
   uri: string;
   language: string;
-  content: string;
+  summary: string;
+  slices: {
+    startLine: number;
+    endLine: number;
+    lines: { n: number; text: string }[];
+  }[];
 }
 
 export type PromptMode = 'validate' | 'complete' | 'chat';
@@ -21,10 +26,15 @@ export type PromptMode = 'validate' | 'complete' | 'chat';
 export interface PromptContext {
   code: string;
   mode: PromptMode;
-  fileContext?: string;                        // legacy single-file support
-  fileContexts?: NormalizedFileContext[];      // ✅ new multi-file support
+
+  // legacy single-file support
+  fileContext?: string;
+
+  // new multi-file support
+  fileContexts?: NormalizedFileContext[];
+
   language?: string;
-  capabilities?: { [key: string]: boolean };   // 🔑 added
+  capabilities?: { [key: string]: boolean };
 }
 
 /**
@@ -49,6 +59,36 @@ function getContextSize(): number {
 }
 
 /**
+ * Normalize fileContexts into the structure expected by prompts.
+ */
+function normalizeFileContexts(
+  fileContexts?: NormalizedFileContext[],
+  fileContext?: string,
+  language?: string
+) {
+  if (fileContexts && fileContexts.length > 0) {
+    return fileContexts.map(f => ({
+      uri: f.uri,
+      language: f.language,
+      summary: f.summary,
+      slices: f.slices
+    }));
+  }
+
+  // Legacy single-file fallback
+  if (fileContext) {
+    return [{
+      uri: 'active',
+      language: language ?? 'plaintext',
+      summary: 'Active file (legacy mode)',
+      slices: []
+    }];
+  }
+
+  return undefined;
+}
+
+/**
  * Build messages for OpenAI's chat endpoint.
  */
 export function buildOpenAIMessages({
@@ -60,25 +100,21 @@ export function buildOpenAIMessages({
   capabilities = {}
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
+  const normalized = normalizeFileContexts(fileContexts, fileContext, language);
+
   let systemPrompt = '';
 
   if (mode === 'chat') {
     systemPrompt = chatPrompt(
       language,
-      fileContexts ??
-        (fileContext
-          ? [{ uri: 'active', language, content: fileContext }]
-          : undefined),
+      normalized,
       contextSize,
       capabilities
     );
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(
       code,
-      fileContexts ??
-        (fileContext
-          ? [{ uri: 'active', language, content: fileContext }]
-          : undefined),
+      normalized,
       language,
       contextSize,
       capabilities
@@ -86,10 +122,7 @@ export function buildOpenAIMessages({
   } else {
     systemPrompt = completionPrompt(
       code,
-      fileContexts ??
-        (fileContext
-          ? [{ uri: 'active', language, content: fileContext }]
-          : undefined),
+      normalized,
       language,
       contextSize,
       capabilities
@@ -100,8 +133,8 @@ export function buildOpenAIMessages({
     mode === 'chat'
       ? code.trim()
       : mode === 'validate'
-      ? userValidationMessage(code, language)
-      : userCompletionMessage(code, language);
+        ? userValidationMessage(code, language)
+        : userCompletionMessage(code, language);
 
   return [
     { role: 'system', content: systemPrompt.trim() },
@@ -121,25 +154,21 @@ export function buildOllamaMessages({
   capabilities = {}
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
+  const normalized = normalizeFileContexts(fileContexts, fileContext, language);
+
   let systemPrompt = '';
 
   if (mode === 'chat') {
     systemPrompt = chatPrompt(
       language,
-      fileContexts ??
-        (fileContext
-          ? [{ uri: 'active', language, content: fileContext }]
-          : undefined),
+      normalized,
       contextSize,
       capabilities
     );
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(
       code,
-      fileContexts ??
-        (fileContext
-          ? [{ uri: 'active', language, content: fileContext }]
-          : undefined),
+      normalized,
       language,
       contextSize,
       capabilities
@@ -147,10 +176,7 @@ export function buildOllamaMessages({
   } else {
     systemPrompt = completionPrompt(
       code,
-      fileContexts ??
-        (fileContext
-          ? [{ uri: 'active', language, content: fileContext }]
-          : undefined),
+      normalized,
       language,
       contextSize,
       capabilities
@@ -161,8 +187,8 @@ export function buildOllamaMessages({
     mode === 'chat'
       ? code.trim()
       : mode === 'validate'
-      ? userValidationMessage(code, language)
-      : userCompletionMessage(code, language);
+        ? userValidationMessage(code, language)
+        : userCompletionMessage(code, language);
 
   return [
     { role: 'system', content: systemPrompt.trim() },
