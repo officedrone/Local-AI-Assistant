@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { getActiveChatPanel } from '../handlers/chatPanel/chatPanel';
 import { refreshTokenStats } from '../handlers/chatPanel/chatPanelTokens';
 import { getContextFiles } from '../handlers/chatPanel/chatPanelContext';
+import { formatFileContexts } from '../static/prompts';
 
 const CONFIG_SECTION = 'localAIAssistant';
 

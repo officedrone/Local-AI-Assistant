@@ -87,7 +87,7 @@ function updatePendingFileTokens() {
     pendingFileUris = [];
   }
 
-  // Mark these files as “seen”
+  // Mark these files as "seen"
   newFiles.forEach(f => seenFiles.add(f.uri));
 
   lastContextState = current;
@@ -350,7 +350,7 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
           }
         }
 
-        // trigger UI cleanup in the webview (no “no response” placeholder)
+        // trigger UI cleanup in the webview (no "no response" placeholder)
         panel.webview.postMessage({ type: 'stopStream' });
 
         // resume health checks

@@ -95,6 +95,9 @@ async function ensureOpenAIModel(model?: string): Promise<string | undefined> {
 }
 
 // ✅ Streaming support
+let debugDeltaLogged = false;
+let inReasoningBlock = false;
+
 export async function streamFromOpenAI({
   model,
   messages,
@@ -135,6 +138,7 @@ export async function streamFromOpenAI({
   if (!reader) throw new Error('No response body from OpenAI-compatible endpoint');
 
   let buffer = '';
+  let rawChunkCount = 0;
   while (true) {
     if (signal?.aborted) {
       console.log('[openaiProxy] Aborted by user');
@@ -145,7 +149,15 @@ export async function streamFromOpenAI({
     const { done, value } = await reader.read();
     if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
+    rawChunkCount++;
+    const rawText = decoder.decode(value, { stream: true });
+    
+    // Log first few raw chunks to see what the API actually sends
+    if (rawChunkCount <= 3) {
+      console.log('[OPENAI RAW] Chunk', rawChunkCount, ':', rawText.substring(0, 500));
+    }
+
+    buffer += rawText;
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
 
@@ -161,12 +173,41 @@ export async function streamFromOpenAI({
 
       try {
         const parsed = JSON.parse(clean);
-        const token = parsed?.choices?.[0]?.delta?.content;
-        if (token) onToken(token);
+        const delta = parsed?.choices?.[0]?.delta;
+        
+        // Debug: Log the full delta structure once per stream
+        if (!debugDeltaLogged) {
+          console.log('[OPENAI DEBUG] Full delta:', delta);
+          debugDeltaLogged = true;
+        }
+        
+        const token = delta?.content;
+        const reasoning = delta?.reasoning_content || delta?.reasoning || delta?.thought || delta?.thinking;
+        
+        // Handle reasoning blocks - send tags only at start/end, not per chunk
+        if (reasoning) {
+          if (!inReasoningBlock) {
+            onToken('<thinking>');
+            inReasoningBlock = true;
+          }
+          onToken(reasoning);
+        } else if (token && inReasoningBlock) {
+          // Reasoning ended, switch back to regular content
+          onToken('</thinking>');
+          inReasoningBlock = false;
+          onToken(token);
+        } else if (token) {
+          onToken(token);
+        }
       } catch (err) {
         console.warn('⚠️ Failed to parse streamed chunk:', clean, err);
       }
     }
+  }
+
+  // Close any open reasoning block at end of stream
+  if (inReasoningBlock) {
+    inReasoningBlock = false;
   }
 
   if (onDone) onDone();

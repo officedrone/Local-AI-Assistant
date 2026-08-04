@@ -90,6 +90,9 @@ export async function handleStreamingResponse({
           if (!isStreamingActive(panel) || signal?.aborted) return;
 
           assistantText += chunk;
+          
+          // IMPORTANT: Send raw chunk WITHOUT stripping thinking/tool tags
+          // The webview will handle tag detection and bubble creation
           panel.webview.postMessage({ type: 'streamChunk', message: chunk });
 
           // NEW: Send real-time token count during streaming
@@ -131,6 +134,9 @@ export async function handleStreamingResponse({
             if (!isStreamingActive(panel) || signal?.aborted) return;
 
             assistantText += chunk;
+            
+            // IMPORTANT: Send raw chunk WITHOUT stripping thinking/tool tags
+            // The webview will handle tag detection and bubble creation
             panel.webview.postMessage({ type: 'streamChunk', message: chunk });
 
             // NEW: Send real-time token count during streaming
@@ -188,6 +194,8 @@ export async function handleStreamingResponse({
 
         // Fallback full response path
         assistantText = response;
+        
+        // IMPORTANT: Send raw response WITHOUT stripping thinking/tool tags
         panel.webview.postMessage({ type: 'streamChunk', message: assistantText });
         finalize();
       }

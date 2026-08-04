@@ -1,7 +1,20 @@
 // src/static/webviewScripts/messageRouter.js
-import { appendBubble, getStreamingState, setStreamingState } from './chat.js';
+import { 
+  appendBubble, 
+  getStreamingState, 
+  setStreamingState,
+  createPlaceholderBubble,
+  createThinkingBubble,
+  createAssistantBubble,
+  addThinkingBubble,
+  removeLastThinkingBubble,
+  setActiveThinkingBuffer,
+  getActiveThinkingBuffer,
+  clearThinkingBubbles,
+  getThinkingBubbles
+} from './chat.js';
 import { updateContextTokens, updateContextFileList } from './contextControls.js';
-import { updateTokenPanel, updateFileContextTokens  } from './sessionTokens.js';
+import { updateTokenPanel, updateFileContextTokens, updateBubbleTokenCount } from './sessionTokens.js';
 import { updateServiceStatus } from './serviceStatus.js';
 import {
   scrollToBottomImmediate,
@@ -12,26 +25,153 @@ import {
 } from './scrollUtils.js';
 import { renderMd, injectLinks } from './markdownUtils.js';
 
+// ==================== STATE MANAGEMENT ====================
+
 let tokenUpdateTimer = null;
 
-// Track thinking state and chunk receipt
-let inThinkingBlock = false;
-let thinkingBuffer = '';
+// Streaming state machine
+const STREAMING_STATE = {
+  IDLE: 'idle',
+  PLACEHOLDER: 'placeholder',
+  THINKING: 'thinking',
+  ASSISTANT: 'assistant',
+  TOOL_CALL: 'tool_call'
+};
+
+let currentState = STREAMING_STATE.IDLE;
+let currentBubbleId = null; // The main assistant bubble id
+let toolCallBuffer = '';
+let regularStreamBuffer = '';
+let thinkingStreamBuffer = '';
 let hasReceivedChunk = false;
+
+// Timing watchdogs
 let noChunkTimer = null;
+let streamStartTime = null;
 
-// Capabilities variables
-let inToolCall = false;
-let toolBuffer = '';
-let scanBuffer = '';
-let preToolCallBuffer = '';
+// Capabilities tracking
+let inThinkingBlock = false;
+let thinkingTagOpen = ['<think>', '<thinking>', '<seed:think>', '[THINK]'];
+let thinkingTagClose = ['</think>', '</thinking>','</seed:think>', '[/THINK]'];
 
-// Initialize a global store for edit data
+// Tool call markers
+const TOOL_CALL_OPEN = '[LAIToolCall]';
+const TOOL_CALL_CLOSE = '[/LAIToolCall]';
+
+// Global edit store
 window.storedEdits = {};
-
-// Track multiple pending edits for the same assistant bubble
 let pendingEdits = new Map(); // bubbleId -> array of {uri, content, edits, preview}
 
+
+// ==================== HELPER FUNCTIONS ====================
+
+function getCurrentThinkingBuffer() {
+  const bubbles = getThinkingBubbles();
+  if (bubbles.length === 0) return '';
+  const lastBubble = bubbles[bubbles.length - 1];
+  return lastBubble.buffer || '';
+}
+
+function setCurrentThinkingBuffer(content) {
+  setActiveThinkingBuffer(content);
+}
+
+function isThinkingTagOpen(chunk) {
+  return thinkingTagOpen.some(tag => chunk.includes(tag));
+}
+
+function isThinkingTagClose(chunk) {
+  return thinkingTagClose.some(tag => chunk.includes(tag));
+}
+
+function extractContentFromTags(chunk, isOpening = false) {
+  let result = chunk;
+  
+  if (isOpening) {
+    for (const tag of thinkingTagOpen) {
+      const idx = result.indexOf(tag);
+      if (idx !== -1) {
+        result = result.slice(idx + tag.length);
+        break;
+      }
+    }
+  } else {
+    for (const tag of thinkingTagClose) {
+      const idx = result.indexOf(tag);
+      if (idx !== -1) {
+        result = result.slice(0, idx);
+        break;
+      }
+    }
+  }
+  
+  return result;
+}
+
+function hasPotentialTagFragment(buffer, openTags, closeTags) {
+  const candidates = [...openTags, ...closeTags];
+  for (const tag of candidates) {
+    const max = Math.min(buffer.length, tag.length - 1);
+    for (let k = 1; k <= max; k++) {
+      const suffix = buffer.slice(-k);
+      if (tag.startsWith(suffix)) return true;
+    }
+  }
+  return false;
+}
+
+function transitionFromPlaceholder() {
+  const placeholder = document.querySelector('.placeholder-bubble');
+  if (!placeholder) return;
+  
+  placeholder.classList.remove('pulsing');
+  placeholder.parentNode.removeChild(placeholder);
+}
+
+function finalizeCurrentBubble() {
+  transitionFromPlaceholder();
+  
+  const assistantElem = createAssistantBubble();
+  currentBubbleId = assistantElem.id;
+  setStreamingState({ 
+    isStreaming: true, 
+    assistantElem: assistantElem, 
+    assistantRaw: regularStreamBuffer 
+  });
+  
+  if (regularStreamBuffer) {
+    const body = assistantElem.querySelector('.markdown-body');
+    if (body) {
+      body.innerHTML = `<strong>Assistant:</strong><br/>${renderMd(regularStreamBuffer)}`;
+      injectLinks(assistantElem);
+    }
+  }
+}
+
+function transitionToThinking() {
+  transitionFromPlaceholder();
+  
+  const thinkingElem = createThinkingBubble();
+  addThinkingBubble(thinkingElem);
+  currentState = STREAMING_STATE.THINKING;
+}
+
+function transitionToAssistant() {
+  if (currentState === STREAMING_STATE.PLACEHOLDER) {
+    finalizeCurrentBubble();
+  } else if (!currentBubbleId || !getStreamingState().assistantElem || currentState === STREAMING_STATE.THINKING) {
+    const assistantElem = createAssistantBubble();
+    currentBubbleId = assistantElem.id;
+    setStreamingState({ 
+      isStreaming: true, 
+      assistantElem: assistantElem, 
+      assistantRaw: regularStreamBuffer 
+    });
+  }
+}
+
+
+// ==================== MAIN MESSAGE ROUTER ====================
 
 export function setupMessageRouter(vscode, contextSize) {
   window.addEventListener('message', (ev) => {
@@ -39,31 +179,51 @@ export function setupMessageRouter(vscode, contextSize) {
 
     switch (type) {
       case 'startStream': {
+        // Reset all state
+        currentState = STREAMING_STATE.PLACEHOLDER;
         hasReceivedChunk = false;
-        const bubble = appendBubble('…', 'ai-message');
-        setStreamingState({ isStreaming: true, assistantElem: bubble, assistantRaw: '' });
+        streamStartTime = Date.now();
+        regularStreamBuffer = '';
+        toolCallBuffer = '';
+        
+        // Clear any previous thinking bubbles from DOM
+        clearThinkingBubbles();
 
-        // Start with visual pulse only
-        bubble.classList.add('pulsing');
-        inThinkingBlock = false;
-        thinkingBuffer = '';
+        // Create initial placeholder bubble
+        const placeholderElem = createPlaceholderBubble();
+        currentBubbleId = placeholderElem.id;
+        setStreamingState({ 
+          isStreaming: true, 
+          assistantElem: placeholderElem, 
+          assistantRaw: '' 
+        });
 
-        // Watchdog: if no chunk arrives soon, show interim message + real thinking mode
+        // Start watchdog for long wait message (10 seconds)
         if (noChunkTimer) clearTimeout(noChunkTimer);
         noChunkTimer = setTimeout(() => {
-          if (!hasReceivedChunk) {
+          if (!hasReceivedChunk && currentState === STREAMING_STATE.PLACEHOLDER) {
             const state = getStreamingState();
             if (state.assistantElem) {
+              // Replace placeholder with long wait message
               const body = state.assistantElem.querySelector('.markdown-body');
-              body.innerHTML = `<strong>Assistant:</strong><i><br/>
-                <span class="status-reason">&lt; LLM is taking a bit longer than expected to reply. This is normal if the model is just being loaded, or if processing large context that was just added.) &gt;</span>`;
+              if (body) {
+                body.innerHTML = `<strong>Assistant:</strong><br/>${body.innerHTML}`;
+                body.classList.remove('pulsing');
+                
+                // Add the waiting message
+                const waitMsg = document.createElement('div');
+                waitMsg.className = 'long-wait-message';
+                waitMsg.innerHTML = `
+                  <i><span class="status-reason">&lt; LLM is taking a bit longer than expected to reply. This is normal if the model is just being loaded, or if processing large context that was just added.) &gt;</span></i>
+                `;
+                body.appendChild(waitMsg);
+              }
             }
           }
         }, 10000);
 
         setUserInitiatedScroll(false);
         setAutoScrollEnabled(true);
-
         document.getElementById('sendButton').textContent = 'Stop';
         scrollToBottomImmediate(true);
         break;
@@ -72,9 +232,7 @@ export function setupMessageRouter(vscode, contextSize) {
       case 'streamChunk': {
         hasReceivedChunk = true;
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
-        const state = getStreamingState();
-        state.assistantElem.classList.remove('pulsing');
-
+        
         // Defensive coercion to string
         let chunk = message ?? '';
         if (typeof chunk !== 'string') {
@@ -85,106 +243,63 @@ export function setupMessageRouter(vscode, contextSize) {
           }
         }
 
-        // ---------- Thinking detection ----------
-        if (chunk.includes('<think>') || chunk.includes('<seed:think>') || chunk.includes('[THINK]')) {
-          inThinkingBlock = true;
-          thinkingBuffer = '';
-          chunk = chunk.replace('<think>', '').replace('<seed:think>', '').replace('[THINK]', '');
-          state.assistantElem.classList.add('thinking');
-        }
+        console.log('[MSG] Chunk received:', { 
+          currentState, 
+          inThinkingBlock, 
+          chunkLength: chunk.length, 
+          chunkPreview: chunk.substring(0, 300) 
+        });
 
-        if (chunk.includes('</think>') || chunk.includes('</seed:think>') || chunk.includes('[/THINK]')) {
-          inThinkingBlock = false;
-          chunk = chunk.replace('</think>', '').replace('</seed:think>', '').replace('[/THINK]', '');
-          thinkingBuffer = '';
-          state.assistantElem.classList.remove('thinking', 'pulsing');
-          setStreamingState({ ...state, assistantRaw: '' });
-          const body = state.assistantElem.querySelector('.markdown-body');
-          if (body) body.innerHTML = '<strong>Assistant:</strong><br/>';
-        }
-
-        if (inThinkingBlock) {
-          thinkingBuffer += chunk;
-          const body = state.assistantElem.querySelector('.markdown-body');
-          let contentEl = body.querySelector('.thinking-content');
-          if (!contentEl) {
-            body.innerHTML = `
-              <div class="thinking-header">💡 Thinking…</div>
-              <div class="thinking-content"></div>
-            `;
-            contentEl = body.querySelector('.thinking-content');
-            contentEl.dataset.autoScroll = 'true';
-            contentEl.addEventListener('scroll', () => {
-              const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
-              contentEl.dataset.autoScroll = atBottom.toString();
-            });
+        // ========== TOOL CALL DETECTION (Highest Priority) ==========
+/*         const toolOpenIdx = toolCallBuffer.indexOf(TOOL_CALL_OPEN);
+        if (!toolCallBuffer.includes(TOOL_CALL_CLOSE) && toolOpenIdx !== -1) {
+          currentState = STREAMING_STATE.TOOL_CALL;
+          
+          // Extract pre-tool text and finalize current bubble
+          const preToolText = regularStreamBuffer + toolCallBuffer.slice(0, toolOpenIdx);
+          if (preToolText.trim()) {
+            finalizeCurrentBubble();
           }
-          contentEl.innerHTML = renderMd(thinkingBuffer);
-          if (contentEl.dataset.autoScroll === 'true') {
-            contentEl.scrollTop = contentEl.scrollHeight;
-          }
-          if (shouldAutoScroll) scheduleScrollToBottom();
-          return;
-        }
+          
+          toolCallBuffer = '';
+        } */
 
-        // ---------- Tool-call detection ----------
-        scanBuffer += chunk;
-        const openTag = '[LAIToolCall]';
-        const closeTag = '[/LAIToolCall]';
-
-        if (!inToolCall) {
-          const openIdx = scanBuffer.indexOf(openTag);
-          if (openIdx !== -1) {
-            inToolCall = true;
-            toolBuffer = '';
-            // Preserve any assistant text before the tool call
-            const preText = (state.assistantRaw || '') + scanBuffer.slice(0, openIdx);
-            const body = state.assistantElem.querySelector('.markdown-body');
-            if (body) {
-              // Build the bubble with the pre-tool-call explanation retained
-              const preDiv = document.createElement('div');
-              preDiv.className = 'pre-tool-call';
-              preDiv.innerHTML = renderMd(preText);
-              body.appendChild(preDiv);
-
-              // Add a stable tool-call section
-              const toolSection = document.createElement('div');
-              toolSection.className = 'tool-call-section';
-              toolSection.innerHTML = `
-                <div class="thinking-header">🔧 Tool call in progress…</div>
-                <div class="thinking-content">Receiving tool data…</div>
-                <div class="edit-previews-container"></div>
-              `;
-              body.appendChild(toolSection);
-
-            }
-            // Advance buffer past the open tag
-            scanBuffer = scanBuffer.slice(openIdx + openTag.length);
-            state.assistantElem.classList.add('thinking');
-            // Reset assistantRaw since we’ve rendered preText
-            setStreamingState({ ...state, assistantElem: state.assistantElem, assistantRaw: '' });
-          }
-        }
-
-        if (inToolCall) {
-          const combined = toolBuffer + scanBuffer;
-          const closeIdx = combined.indexOf(closeTag);
+        if (currentState === STREAMING_STATE.TOOL_CALL) {
+          const closeIdx = toolCallBuffer.indexOf(TOOL_CALL_CLOSE);
           if (closeIdx !== -1) {
-            // Tool call complete: extract pure JSON payload, strip tags
-            const payloadStr = combined.slice(0, closeIdx);
-            scanBuffer = combined.slice(closeIdx + closeTag.length); // discard close tag text
-            inToolCall = false;
-            state.assistantElem.classList.remove('pulsing');
-
-            // Update header only; do NOT overwrite bubble content or inject raw JSON here
-            const body = state.assistantElem.querySelector('.markdown-body');
-            if (body) {
-              const header = body.querySelector('.thinking-header');
-              if (header) header.textContent = '🔧 Tool call complete';
+            // Tool call complete
+            const payloadStr = toolCallBuffer.slice(0, closeIdx);
+            toolCallBuffer = '';
+            currentState = STREAMING_STATE.ASSISTANT;
+            
+            // Update UI to show tool call completed
+            const state = getStreamingState();
+            if (state.assistantElem) {
+              const body = state.assistantElem.querySelector('.markdown-body');
+              if (body) {
+                let header = body.querySelector('.thinking-header');
+                if (!header) {
+                  header = document.createElement('div');
+                  header.className = 'thinking-header';
+                  header.textContent = '🔧 Tool call complete';
+                  body.insertBefore(header, body.firstChild);
+                } else {
+                  header.textContent = '🔧 Tool call complete';
+                }
+                
+                // Add edit preview container if not exists
+                let container = body.querySelector('.edit-previews-container');
+                if (!container) {
+                  container = document.createElement('div');
+                  container.className = 'edit-previews-container';
+                  body.appendChild(container);
+                }
+              }
             }
 
+            // Parse and send tool request
             try {
-              const normalized = payloadStr.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+              const normalized = payloadStr.replace(/[""']/g, '"').replace(/[''']/g, "'");
               const parsedTool = JSON.parse(normalized);
               vscode.postMessage({
                 type: 'requestPreview',
@@ -194,61 +309,159 @@ export function setupMessageRouter(vscode, contextSize) {
                 }
               });
             } catch (e) {
-              const body2 = state.assistantElem.querySelector('.markdown-body');
-              if (body2) {
-                body2.innerHTML += `<pre class="tool-error">Tool parse error: ${String(e)}</pre>`;
-              }
+              console.error('Tool parse error:', e);
             }
 
-            toolBuffer = '';
           } else {
-            // Accumulate tool payload silently; do not render raw JSON buffer
-            toolBuffer = combined;
-            scanBuffer = '';
-            const body = state.assistantElem.querySelector('.markdown-body');
-            const contentEl = body && body.querySelector('.thinking-content');
-            if (contentEl) {
-              contentEl.textContent = 'Receiving tool data…';
-              if (contentEl.dataset.autoScroll === 'true') {
-                contentEl.scrollTop = contentEl.scrollHeight;
+            // Accumulate tool payload
+            toolCallBuffer += chunk;
+            
+            // Update UI to show receiving tool data
+            const state = getStreamingState();
+            if (state.assistantElem) {
+              const body = state.assistantElem.querySelector('.markdown-body');
+              if (body) {
+                let header = body.querySelector('.thinking-header');
+                if (!header) {
+                  header = document.createElement('div');
+                  header.className = 'thinking-header';
+                  header.textContent = '🔧 Tool call in progress…';
+                  body.insertBefore(header, body.firstChild);
+                } else {
+                  header.textContent = '🔧 Tool call in progress…';
+                }
+                
+                let contentEl = body.querySelector('.tool-call-content');
+                if (!contentEl) {
+                  contentEl = document.createElement('div');
+                  contentEl.className = 'tool-call-content';
+                  contentEl.textContent = 'Receiving tool data…';
+                  body.insertBefore(contentEl, body.firstChild);
+                } else {
+                  contentEl.textContent = 'Receiving tool data…';
+                }
               }
-              if (shouldAutoScroll) scheduleScrollToBottom();
             }
+            
+            return; // Don't process as regular stream
+          }
+        }
+                // ========== CHECK FOR COMPLETE TAGS FIRST ==========
+        if (isThinkingTagOpen(chunk)) {
+          console.log('[MSG] OPENING TAG DETECTED! Creating thinking bubble...');
+          console.log('[MSG] Tag chunk:', chunk.substring(0, 100));
+
+          transitionFromPlaceholder();
+
+          const thinkingElem = createThinkingBubble();
+          addThinkingBubble(thinkingElem);
+
+          inThinkingBlock = true;
+          currentState = STREAMING_STATE.THINKING;
+
+          console.log('[MSG] State changed to THINKING, bubble count:', getThinkingBubbles().length);
+
+          chunk = extractContentFromTags(chunk, true);
+        } else if (isThinkingTagClose(chunk) && inThinkingBlock) {
+          const contentBeforeClose = extractContentFromTags(chunk, false);
+          
+          // Finalize the current thinking bubble with any content before close tag
+          const bubbles = getThinkingBubbles();
+          if (contentBeforeClose && bubbles.length > 0) {
+            const lastBubble = bubbles[bubbles.length - 1];
+            lastBubble.buffer += contentBeforeClose;
+            setCurrentThinkingBuffer(lastBubble.buffer);
+          }
+
+          // Remove the thinking bubble and transition to assistant state
+          if (bubbles.length > 0) {
+            removeLastThinkingBubble();
+          }
+          
+          // Extract any content AFTER the closing tag - this is regular response text!
+          for (const closeTag of thinkingTagClose) {
+            const idx = chunk.indexOf(closeTag);
+            if (idx !== -1) {
+              chunk = chunk.slice(idx + closeTag.length);
+              break;
+            }
+          }
+          
+          // Transition to assistant state so regular response bubble appears
+          transitionToAssistant();
+          
+          // If there's content after the tag, continue processing as regular stream
+          if (!chunk.trim()) {
+            return;
+          }
+        } else {
+          console.log('[MSG] Checking for tags:', { 
+            isOpeningTag: isThinkingTagOpen(chunk), 
+            isClosingTag: isThinkingTagClose(chunk),
+            chunkPreview: chunk.substring(0, 100) 
+          });
+
+          const combinedBuffer = regularStreamBuffer + chunk;
+          const hasPartialTag = hasPotentialTagFragment(
+            combinedBuffer, 
+            thinkingTagOpen, 
+            thinkingTagClose
+          );
+
+          if (hasPartialTag && !inThinkingBlock && currentState !== STREAMING_STATE.TOOL_CALL) {
+            console.log('[MSG] Partial tag detected, buffering chunk');
+            regularStreamBuffer += chunk;
+
+            if (shouldAutoScroll) scheduleScrollToBottom();
             return;
           }
         }
 
+        // ========== PROCESS CHUNK BASED ON STATE ==========
+        console.log('[MSG] Before state processing:', { 
+          inThinkingBlock, 
+          bubblesCount: getThinkingBubbles().length,
+          currentState,
+          chunkPreview: chunk.substring(0, 100)
+        });
 
-        // ---------- Normal streaming ----------
-        function hasPotentialTagFragment(buffer, openTag, closeTag) {
-          const candidates = [openTag, closeTag];
-          for (const tag of candidates) {
-            const max = Math.min(buffer.length, tag.length - 1);
-            for (let k = 1; k <= max; k++) {
-              const suffix = buffer.slice(-k);
-              if (tag.startsWith(suffix)) return true;
-            }
-          }
-          return false;
+        const currentBubbles = getThinkingBubbles();
+        if (inThinkingBlock && currentBubbles.length > 0) {
+          console.log('[MSG] Adding to thinking buffer');
+          const lastBubble = currentBubbles[currentBubbles.length - 1];
+          lastBubble.buffer += chunk;
+
+          setCurrentThinkingBuffer(lastBubble.buffer);
+
+          if (shouldAutoScroll) scheduleScrollToBottom();
+          return; // Don't process as regular stream
         }
 
-        if (!inToolCall) {
-          const hasFullTag = scanBuffer.includes(openTag) || scanBuffer.includes(closeTag);
-          const hasPartialTag = hasPotentialTagFragment(scanBuffer, openTag, closeTag);
-          if (!hasFullTag && !hasPartialTag) {
-            if (scanBuffer) {
-              const nextRaw = (state.assistantRaw || '') + scanBuffer;
-              setStreamingState({ ...state, assistantRaw: nextRaw });
-              const body = state.assistantElem.querySelector('.markdown-body');
-              if (body) {
-                body.innerHTML = '<strong>Assistant:</strong><br/>' + renderMd(nextRaw);
-                injectLinks(state.assistantElem);
-              }
-              if (shouldAutoScroll) scheduleScrollToBottom();
-              scanBuffer = '';
+        // ========== SAFE TO ADD TO REGULAR STREAM ==========
+        if (!chunk.includes(TOOL_CALL_OPEN) && !chunk.includes(TOOL_CALL_CLOSE)) {
+          regularStreamBuffer += chunk;
+
+          if (currentState === STREAMING_STATE.PLACEHOLDER) {
+            currentState = STREAMING_STATE.ASSISTANT;
+            finalizeCurrentBubble();
+          }
+
+          const state = getStreamingState();
+          if (state.assistantElem && regularStreamBuffer) {
+            const body = state.assistantElem.querySelector('.markdown-body');
+            if (body) {
+              body.innerHTML = `<strong>Assistant:</strong><br/>${renderMd(regularStreamBuffer)}`;
+              injectLinks(state.assistantElem);
             }
           }
+
+          if (shouldAutoScroll) scheduleScrollToBottom();
         }
+
+
+
+
+
 
         break;
       }
@@ -258,7 +471,7 @@ export function setupMessageRouter(vscode, contextSize) {
         console.log('WEBVIEW ← editPreview', ev.data);
         const { content, uri, edits, preview } = ev.data;
 
-        // ----- Global store for the raw payload (unchanged) -----
+        // Store globally for later use
         window.storedEdits = window.storedEdits || {};
         try {
           window.storedEdits[uri] =
@@ -267,26 +480,25 @@ export function setupMessageRouter(vscode, contextSize) {
           window.storedEdits[uri] = edits;
         }
 
-        // ----- Get the active assistant bubble (the one that emitted the tool call) -----
+        // Get the active assistant bubble
         const { assistantElem } = getStreamingState();
         if (!assistantElem) break;
 
-        // Ensure a stable id for the bubble
+        // Ensure stable id for the bubble
         const bubbleId = assistantElem.id || `bubble-${Date.now()}`;
         if (!assistantElem.id) assistantElem.id = bubbleId;
 
-        // ----- Create a **unique** preview‑wrapper for this tool call -----
+        // Create unique preview wrapper
         const previewWrapper = document.createElement('div');
         previewWrapper.className = 'edit-preview-wrapper';
-        // give it its own id so we can delete it later without touching siblings
         previewWrapper.dataset.previewId = `preview-${Date.now()}`;
 
-        // ----- Title ---------------------------------------------------------
+        // Title
         const title = document.createElement('strong');
         title.textContent = `Proposed Changes for ${uri}:`;
         previewWrapper.appendChild(title);
 
-        // ----- JSON payload (collapsible) ------------------------------------
+        // JSON payload (collapsible)
         const details = document.createElement('details');
         const summary = document.createElement('summary');
         summary.textContent = 'Show JSON payload (JSON lines are 0‑based)';
@@ -300,7 +512,7 @@ export function setupMessageRouter(vscode, contextSize) {
         details.appendChild(pre);
         previewWrapper.appendChild(details);
 
-        // ----- After‑preview (the LLM’s textual explanation) -----------------
+        // After-preview (LLM's textual explanation)
         if (content) {
           const afterPre = document.createElement('pre');
           afterPre.className = 'edit-preview-after';
@@ -308,7 +520,7 @@ export function setupMessageRouter(vscode, contextSize) {
           previewWrapper.appendChild(afterPre);
         }
 
-        // ----- Diff preview --------------------------------------------------
+        // Diff preview
         if (preview) {
           const diffPre = document.createElement('pre');
           diffPre.className = 'edit-preview-diff';
@@ -316,7 +528,7 @@ export function setupMessageRouter(vscode, contextSize) {
           previewWrapper.appendChild(diffPre);
         }
 
-        // ----- Approve / Reject buttons --------------------------------------
+        // Approve / Reject buttons
         const approveBtn = document.createElement('button');
         approveBtn.className = 'approve-edit';
         approveBtn.dataset.uri = uri;
@@ -329,7 +541,7 @@ export function setupMessageRouter(vscode, contextSize) {
         rejectBtn.textContent = 'Reject Edit';
         previewWrapper.appendChild(rejectBtn);
 
-        // ----- Click handling (only removes *this* wrapper) -----------------
+        // Click handling (only removes this wrapper)
         previewWrapper.addEventListener('click', (e) => {
           const t = e.target;
           if (!t || !t.classList) return;
@@ -341,7 +553,7 @@ export function setupMessageRouter(vscode, contextSize) {
             t.textContent = 'Edit Approved';
             t.classList.add('approved');
 
-            // remove the reject button for this preview only
+            // Remove reject button for this preview only
             const rejectBtn = previewWrapper.querySelector('.reject-edit');
             if (rejectBtn) rejectBtn.remove();
 
@@ -357,7 +569,7 @@ export function setupMessageRouter(vscode, contextSize) {
             t.textContent = 'Edit Rejected';
             t.classList.add('rejected');
 
-            // remove the approve button for this preview only
+            // Remove approve button for this preview only
             const approveBtn = previewWrapper.querySelector('.approve-edit');
             if (approveBtn) approveBtn.remove();
 
@@ -368,10 +580,7 @@ export function setupMessageRouter(vscode, contextSize) {
           }
         });
 
-        // ----- Insert the wrapper into the bubble ----------------------------
-        // We keep a dedicated container for *all* previews so that later
-        // previews are added below previous ones, but each preview lives in its
-        // own element.
+        // Insert into bubble's edit container
         let container = assistantElem.querySelector('.edit-previews-container');
         if (!container) {
           container = document.createElement('div');
@@ -381,17 +590,12 @@ export function setupMessageRouter(vscode, contextSize) {
         }
         container.appendChild(previewWrapper);
 
-        // ----- Keep a reference for potential future use (optional) ----------
+        // Keep reference for potential future use
         if (!pendingEdits.has(bubbleId)) pendingEdits.set(bubbleId, []);
         const bubblePending = pendingEdits.get(bubbleId);
         bubblePending.push({ uri, content, edits, preview });
         break;
       }
-
-
-
-
-
 
       case 'confirmEdit': {
         const { uri, edits } = ev.data;
@@ -401,8 +605,6 @@ export function setupMessageRouter(vscode, contextSize) {
         });
         break;
       }
-
-
 
       //sendToAI loopback
       case 'sendToAI': {
@@ -416,9 +618,6 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
       }
 
-
-
-
       case 'earlyEnd': {
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
 
@@ -430,30 +629,32 @@ export function setupMessageRouter(vscode, contextSize) {
           if (!hasReceivedChunk) {
             body.innerHTML = `<strong>Assistant:</strong><br/>${ev.data.reason}`;
           } else if (inThinkingBlock) {
-            const rendered = renderMd(thinkingBuffer || '');
-            body.innerHTML = `<strong>Assistant:</strong><br/>${rendered}`;
+            // Finalize any pending thinking content
+            const bubbles = getThinkingBubbles();
+            const lastBubble = bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
+            if (lastBubble) {
+              const rendered = renderMd(lastBubble.buffer || '');
+              body.innerHTML = `<strong>Assistant:</strong><br/>${rendered}`;
+            }
           }
 
           // Clear transient visual states
           state.assistantElem.classList.remove('thinking', 'pulsing');
-
-          // Apply your aborted status class
           state.assistantElem.classList.add('status-aborted');
         }
 
         // Reset flags/buffer
         inThinkingBlock = false;
-        thinkingBuffer = '';
+        clearThinkingBubbles();
+        regularStreamBuffer = '';
+        toolCallBuffer = '';
         hasReceivedChunk = false;
+        currentState = STREAMING_STATE.IDLE;
 
         setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
         document.getElementById('sendButton').textContent = 'Send';
         break;
       }
-
-
-
-
 
       case 'appendAssistant': {
         const { message, tokens } = ev.data;
@@ -463,8 +664,6 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
       }
 
-
-
       case 'endStream':
       case 'stoppedStream': {
         if (noChunkTimer) { clearTimeout(noChunkTimer); noChunkTimer = null; }
@@ -472,32 +671,39 @@ export function setupMessageRouter(vscode, contextSize) {
         const state = getStreamingState();
 
         if (state.assistantElem) {
-          // Only adjust styling; keep existing content (pre-tool text + previews)
+          // Clear visual states but keep content
           state.assistantElem.classList.remove('thinking', 'pulsing');
 
           const body = state.assistantElem.querySelector('.markdown-body');
+          
           if (!hasReceivedChunk && body) {
             body.innerHTML = `<strong>Assistant:</strong><i><br/>
               <span class="status-reason">&lt; No response received from LLM. Verify the URL, API, and model are correct. &gt;</span>`;
             if (shouldAutoScroll) {
               scrollToBottomImmediate(true);
             }
-          } else if (body) {
+          } else if (body && currentState === STREAMING_STATE.TOOL_CALL) {
             const header = body.querySelector('.thinking-header');
             if (header) header.textContent = '🔧 Tool call complete';
           }
         }
 
-        inThinkingBlock = false;
-        thinkingBuffer = '';
-        hasReceivedChunk = false;
+        // Finalize any pending thinking blocks
+        while (getThinkingBubbles().length > 0) {
+          removeLastThinkingBubble();
+        }
 
-        // End stream but keep the assistant bubble reference; do NOT null it
+        inThinkingBlock = false;
+        regularStreamBuffer = '';
+        toolCallBuffer = '';
+        hasReceivedChunk = false;
+        currentState = STREAMING_STATE.IDLE;
+
+        // End stream but keep the assistant bubble reference
         setStreamingState({ isStreaming: false, assistantElem: state.assistantElem, assistantRaw: '' });
         document.getElementById('sendButton').textContent = 'Send';
         break;
       }
-
 
       case 'appendUser': {
         const { message, chatTokens, fileTokens } = ev.data;
@@ -507,54 +713,44 @@ export function setupMessageRouter(vscode, contextSize) {
         break;
       }
 
-
-
       case 'fileContextTokens':
-        updateFileContextTokens(tokens, contextSize);
+        updateFileContextTokens(ev.data.tokens, contextSize);
         break;
-
 
       case 'streamTokenUpdate': {
         const state = getStreamingState();
         if (state.assistantElem && typeof ev.data.tokens === 'number') {
-          const tokenDiv = state.assistantElem.querySelector('.token-count');
-          if (tokenDiv) {
-            let displayText = `🧮 ${ev.data.tokens} tokens`;
-            if (typeof ev.data.tps === 'number') {
-              displayText += ` (${ev.data.tps} TPS)`;
-            }
-            tokenDiv.textContent = displayText; // only text changes, no layout shift
-          }
+          // Update token count on the assistant bubble
+          updateBubbleTokenCount(state.assistantElem, ev.data.tokens, ev.data.tps);
         }
         break;
       }
-
-
-
 
       case 'finalizeAI': {
         const state = getStreamingState();
         const { tokens, tps } = ev.data;
+        
         if (state.assistantElem && typeof tokens === 'number') {
           // Check if token count already exists to avoid duplicates
           const existingTokenDiv = state.assistantElem.querySelector('.token-count');
           if (!existingTokenDiv) {
-            const tdiv = document.createElement('div');
-            tdiv.className = 'token-count';
-            let displayText = `🧮 ${tokens} tokens`;
-            if (typeof tps === 'number') {
-              displayText += ` (${tps} TPS)`;
-            }
-            tdiv.textContent = displayText;
-            state.assistantElem.querySelector('.markdown-body').appendChild(tdiv);
+            updateBubbleTokenCount(state.assistantElem, tokens, tps);
+            
             if (shouldAutoScroll) scrollToBottomImmediate(true);
+          } else {
+            // Update existing token count
+            updateBubbleTokenCount(state.assistantElem, tokens, tps);
           }
         }
+        
+        // Finalize any pending thinking blocks
+        while (getThinkingBubbles().length > 0) {
+          removeLastThinkingBubble();
+        }
+        
+        currentState = STREAMING_STATE.IDLE;
         break;
       }
-
-
-
 
       case 'setModel': {
         const modelSpan = document.getElementById('modelNameBox');
@@ -631,18 +827,23 @@ export function setupMessageRouter(vscode, contextSize) {
         }
 
         const state = getStreamingState();
+        
+        // Finalize any pending thinking blocks
+        while (getThinkingBubbles().length > 0) {
+          removeLastThinkingBubble();
+        }
+
         if (state.assistantElem) {
           // Remove visual states and any placeholder text
           state.assistantElem.classList.remove('thinking', 'pulsing');
 
           // If no chunks were received, update the message to reflect user stopping
-          if (!hasReceivedChunk) {
+          if (!hasReceivedChunk && toolCallBuffer) {
             const body = state.assistantElem.querySelector('.markdown-body');
             if (body) {
-              // Try to parse and adjust line numbers for display
-              let pretty = toolBuffer;
+              let pretty = toolCallBuffer;
               try {
-                const normalized = toolBuffer.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+                const normalized = toolCallBuffer.replace(/[""']/g, '"').replace(/[''']/g, "'");
                 const parsed = JSON.parse(normalized);
                 if (parsed && Array.isArray(parsed.edits)) {
                   const display = {
@@ -665,7 +866,7 @@ export function setupMessageRouter(vscode, contextSize) {
                 }
               } catch {
                 // fallback to raw buffer if parse fails
-                pretty = toolBuffer;
+                pretty = toolCallBuffer;
               }
 
               body.innerHTML = `
@@ -681,13 +882,11 @@ export function setupMessageRouter(vscode, contextSize) {
 
         // Reset state
         setStreamingState({ isStreaming: false, assistantElem: null, assistantRaw: '' });
-
+        
         // Reset send button text
         document.getElementById('sendButton').textContent = 'Send';
         scrollToBottomImmediate(true);
       }
-
-
 
       //update context file list in UI
       case 'contextUpdated': {
@@ -696,9 +895,8 @@ export function setupMessageRouter(vscode, contextSize) {
       }
 
       case 'invokeCommand':
-      // This type is handled by the extension host, not the webview router.
-      break;
-
+        // This type is handled by the extension host, not the webview router.
+        break;
 
       default:
         console.warn('Unknown message type:', type);

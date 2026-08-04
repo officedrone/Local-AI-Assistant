@@ -98,6 +98,9 @@ export async function sendToOllama({ model, messages, signal }: ChatRequestOptio
 }
 
 // ✅ Streaming support via /chat
+let ollamaDebugDeltaLogged = false;
+let inReasoningBlock = false;
+
 export async function streamFromOllama({
   model,
   messages,
@@ -167,6 +170,7 @@ export async function streamFromOllama({
   }
 
   let buffer = '';
+  let rawChunkCount = 0;
   while (true) {
     if (signal?.aborted) {
       console.log('[OllamaProxy] Aborted by user');
@@ -177,7 +181,15 @@ export async function streamFromOllama({
     const { done, value } = await reader.read();
     if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
+    rawChunkCount++;
+    const rawText = decoder.decode(value, { stream: true });
+    
+    // Log first few raw chunks to see what the API actually sends
+    if (rawChunkCount <= 3) {
+      console.log('[OLLAMA RAW] Chunk', rawChunkCount, ':', rawText.substring(0, 500));
+    }
+
+    buffer += rawText;
 
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
@@ -186,13 +198,43 @@ export async function streamFromOllama({
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line);
-        const token = parsed?.message?.content;
-        if (token) onToken(token);
+        const message = parsed?.message;
+        
+        // Debug: Log the full message structure once per stream
+        if (!ollamaDebugDeltaLogged && message) {
+          console.log('[OLLAMA DEBUG] Full message:', message);
+          ollamaDebugDeltaLogged = true;
+        }
+        
+        const token = message?.content;
+        const reasoning = message?.reasoning_content || message?.reasoning || message?.thought || message?.thinking;
+        
+        // Handle reasoning blocks - send tags only at start/end, not per chunk
+        if (reasoning) {
+          if (!inReasoningBlock) {
+            onToken('<thinking>');
+            inReasoningBlock = true;
+          }
+          onToken(reasoning);
+        } else if (token && inReasoningBlock) {
+          // Reasoning ended, switch back to regular content
+          onToken('</thinking>');
+          inReasoningBlock = false;
+          onToken(token);
+        } else if (token) {
+          onToken(token);
+        }
+        
         if (parsed?.done && onDone) onDone();
       } catch {
         console.warn('⚠️ Failed to parse streamed chunk:', line);
       }
     }
+  }
+
+  // Close any open reasoning block at end of stream
+  if (inReasoningBlock) {
+    inReasoningBlock = false;
   }
 
   if (onDone) onDone();
