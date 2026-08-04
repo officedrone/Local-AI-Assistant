@@ -44,3 +44,46 @@ export function updateIncludeCtxStatus(isIncluded) {
     el.textContent = isIncluded ? 'true' : 'false';
   }
 }
+
+// Update token count on specific bubble (for assistant bubbles only)
+export function updateBubbleTokenCount(bubbleElem, tokens, tps = null) {
+  if (!bubbleElem) return;
+  
+  let tokenDiv = bubbleElem.querySelector('.token-count');
+  
+  // Create if doesn't exist
+  if (!tokenDiv) {
+    const footer = bubbleElem.querySelector('.bubble-footer');
+    if (footer) {
+      tokenDiv = document.createElement('div');
+      tokenDiv.className = 'token-count';
+      footer.appendChild(tokenDiv);
+    } else {
+      // Fallback: create in markdown-body
+      const body = bubbleElem.querySelector('.markdown-body');
+      if (body) {
+        tokenDiv = document.createElement('div');
+        tokenDiv.className = 'token-count';
+        body.appendChild(tokenDiv);
+      }
+    }
+  }
+  
+  if (tokenDiv) {
+    let displayText = `🧮 ${tokens} tokens`;
+    if (typeof tps === 'number') {
+      displayText += ` (${tps} TPS)`;
+    }
+    tokenDiv.textContent = displayText;
+  }
+}
+
+// NEW: Clear token count from bubble when stream ends
+export function clearBubbleTokenCount(bubbleElem) {
+  if (!bubbleElem) return;
+  
+  const tokenDiv = bubbleElem.querySelector('.token-count');
+  if (tokenDiv) {
+    tokenDiv.textContent = '';
+  }
+}

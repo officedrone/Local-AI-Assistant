@@ -12,7 +12,7 @@ export interface FileContext {
   summary: string;
   tokens: number;
 }
-
+ 
 let contextFiles: FileContext[] = [];
 
 /**
@@ -143,20 +143,83 @@ async function generateFileSummary(text: string, language: string): Promise<stri
 export function extractRelevantSlices(
   file: FileContext,
   userMessage: string,
-  padding = 30
+  padding = 30,
+  maxTokens = 4000
 ) {
-  const hits = file.lines.filter(l =>
-    userMessage.includes(l.text.trim())
-  );
+  if (!userMessage || !file.lines.length) return [];
+
+  // 1. Extract meaningful keywords
+  const keywords = userMessage
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && w.length < 50);
+
+  if (keywords.length === 0) return [];
+
+  // 2. Find hit lines (0-based internally)
+  const hits = file.lines
+    .map((line, index) => ({ lineIndex: index, text: line.text }))
+    .filter(({ text }) => {
+      const lowerText = text.toLowerCase();
+      return keywords.some(k => lowerText.includes(k));
+    });
 
   if (hits.length === 0) return [];
 
-  const min = Math.max(1, hits[0].n - padding);
-  const max = Math.min(file.lines.length, hits[hits.length - 1].n + padding);
+  // 3. Cluster nearby hits
+  const clusters: number[][] = [];
+  let currentCluster = [hits[0].lineIndex];
 
-  return [{
-    startLine: min,
-    endLine: max,
-    lines: file.lines.slice(min - 1, max)
-  }];
+  for (let i = 1; i < hits.length; i++) {
+    const currentLine = hits[i].lineIndex;
+    const lastInCluster = currentCluster[currentCluster.length - 1];
+
+    // Merge if within 2x padding distance
+    if (currentLine - lastInCluster <= padding * 2) {
+      currentCluster.push(currentLine);
+    } else {
+      clusters.push(currentCluster);
+      currentCluster = [currentLine];
+    }
+  }
+  clusters.push(currentCluster);
+
+  // 4. Expand clusters and build slices with proper indexing
+  const resultSlices: {
+    startLine: number;  // 1-based for LLM
+    endLine: number;    // 1-based for LLM
+    lines: { n: number; text: string }[];
+    tokens: number;
+  }[] = [];
+
+  let accumulatedTokens = 0;
+
+  for (const cluster of clusters) {
+    const minLine = Math.max(0, cluster[0] - padding);
+    const maxLine = Math.min(file.lines.length - 1, cluster[cluster.length - 1] + padding);
+
+    const sliceLines = file.lines.slice(minLine, maxLine + 1);
+
+    // More accurate token estimation (chars / 1.4 for code)
+    const sliceTokens = sliceLines.reduce((acc, line) => acc + line.text.length / 1.4, 0);
+
+    if (maxTokens && accumulatedTokens + sliceTokens > maxTokens) {
+      break;
+    }
+
+    resultSlices.push({
+      startLine: minLine + 1,  // Convert to 1-based
+      endLine: maxLine + 1,    // Convert to 1-based
+      lines: sliceLines.map((line, idx) => ({
+        n: minLine + idx + 1,  // Correct 1-based line number
+        text: line.text
+      })),
+      tokens: Math.ceil(sliceTokens)
+    });
+
+    accumulatedTokens += sliceTokens;
+  }
+
+  return resultSlices;
 }

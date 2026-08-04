@@ -1,6 +1,12 @@
 # Change Log
 
-## 0.0.29 – API Key usage fix
+## 0.0.30 – Regression fixes + refinement
+
+- FIX: Context builder inserting instructions twice
+- FIX: Thinking bubble styling not triggering by adding support for reasoning blocks
+- Refinement: Split thinking bubble into separate DOM
+
+## 0.0.29 – Context enhancements
 
 - UPDATE: Update how context works - from raw file‑string context to a structured model using summaries, line‑indexed slices, and updated prompt plumbing to support deterministic LLM edits using the editFile experimental tool.
 

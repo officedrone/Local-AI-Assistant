@@ -145,24 +145,68 @@ message:hover {
   50% { opacity: 1; }
 }
 
-/* Limit height and auto-scroll the thinking bubble's content */
-.message.ai-message.thinking .markdown-body {
+/* src/static/css/styles.css */
+/* ADD THESE RULES AFTER line 165 (after .message.ai-message.thinking styles) */
+
+.message.ai-message.thinking-bubble .markdown-body {
   display: flex;
   flex-direction: column;
-  max-height: 12em; 
+  max-height: 300px; 
+  overflow: hidden;
 }
 
-.message.ai-message.thinking .thinking-header {
-  flex: 0 0 auto; /* fixed height */
+.message.ai-message.thinking-bubble .thinking-header {
+  flex-shrink: 0;
   font-weight: bold;
-  padding: 0.25rem;
+  padding: 8px 12px;
+  background: var(--vscode-input-background);
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
 }
 
-.message.ai-message.thinking .thinking-content {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  padding: 0.25rem;
+
+.message.ai-message.thinking-bubble .thinking-details {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
+
+.message.ai-message.thinking-bubble .thinking-content {
+  overflow-y: auto;
+  padding: 8px 12px;
+  max-height: calc(300px - 45px);
+  flex-grow: 1;
+}
+
+/* Collapsible thinking details styling */
+.message.ai-message.thinking-bubble .thinking-details {
+  border: none;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message.ai-message.thinking-bubble .thinking-details > summary {
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.2s ease;
+  list-style: none;
+}
+
+.message.ai-message.thinking-bubble .thinking-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.message.ai-message.thinking-bubble .thinking-details[open] > summary {
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+}
+
+.message.ai-message.thinking-bubble .thinking-details:not([open]) > summary {
+  padding: 8px 12px;
+}
+
 
 
 /* ─── CODE BLOCKS & INLINE CODE ────────────── */
