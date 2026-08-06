@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.0.31 – Release preparation
+
+- FIX: Token count from thinking bubble being appended to placeholder message in certain cases
+- FIX: Files in context token counts encountering drift in specific cases (man there were a lot of these, i feel like i shrank this package by half)
+- REMOVE: All debug console.log statements from extension codebase (22 entries across 7 files)
+- ADD: toggle for file context (Smart Slicing vs Full). Note that this feature might change in the future, I'm still mulling what's the best way to do this, but wanted to get this in the UI to test around.
+
 ## 0.0.30 – Regression fixes + refinement
 
 - FIX: Context builder inserting instructions twice

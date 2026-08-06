@@ -29,7 +29,7 @@ body{
              display:flex; flex-direction:column; gap:10px;}
 #chat-container{
   flex:1 1 auto; display:flex; flex-direction:column; gap:10px;
-  overflow-y:auto; padding:10px;
+  overflow-y:auto; padding:10px; min-height:0;
   scroll-behavior: smooth;
   background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.04)),var(--vscode-input-background);
   border:1px solid var(--vscode-editorWidget-border); border-radius:4px;
@@ -444,8 +444,7 @@ w;
 
 /* ─── MULTI‑FILE CONTEXT STYLES ───────────── */
 #contextControls{
-  margin-top:.5rem;padding:.5rem;border:1px solid var(--vscode-editorWidget-border);
-  border-radius:4px;background-color:var(--vscode-editorWidget-background);}
+  margin-top:.5rem;padding:.5rem;}
 .context-buttons{display:flex; gap:.5rem;margin-bottom:.5rem;}
 .context-buttons button{
   font-size:.8rem;padding:.2rem .6rem;border:1px solid var(--vscode-button-border,var(--vscode-editorWidget-border));
@@ -462,7 +461,8 @@ w;
 /* Scroll container */
 .context-files-list{
   max-height:150px; overflow-y:auto;border-radius:4px;padding:.4rem;
-  background-color:var(--vscode-editor-background);font-size:.85rem;}
+  background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.04)),var(--vscode-input-background);
+  font-size:.85rem;}
 .context-files-list.single{
   border:1px solid var(--vscode-editorWidget-border);
   padding:0;background-color:var(--vscode-button-secondaryBackground);}
@@ -607,6 +607,51 @@ button:disabled {
 }
 
 
+/* ─── CONTEXT SECTION DROPDOWN ─────────────────── */
+details.context-section-dropdown {
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  background-color: var(--vscode-editor-background);
+  margin-top: 12px;
+}
+
+details.context-section-dropdown[open] > div.context-files-list {
+  background-color: var(--vscode-editor-background);
+}
+
+details.context-section-dropdown > summary {
+  display: flex;
+  align-items: center;
+  padding: .2rem .4rem .2rem 1.5rem;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  background-color: var(--chat-background, #1e1e1e);
+  font-size: .85rem;
+  cursor: pointer;
+  position: relative;
+  gap: 0;
+}
+
+details.context-section-dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.context-section-dropdown > summary::before {
+  content: '▸';
+  position: absolute;
+  left: .4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: .15s ease;
+  color: var(--vscode-editor-foreground);
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+details.context-section-dropdown[open] > summary::before {
+  content: '▾';
+}
+
 /* ─── CAPABILITIES DROPDOWN ─────────────────── */
 details.capabilities-dropdown {
   border: 1px solid var(--vscode-editorWidget-border);
@@ -620,32 +665,26 @@ details.capabilities-dropdown[open] > div.capabilities-list {
 }
 
 details.capabilities-dropdown > summary {
-  
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: .2rem .4rem;
+  padding: .2rem .4rem .2rem 1.5rem;
   margin-bottom: 0;
   border-bottom: 1px solid var(--vscode-editorWidget-border);
-  background-color: var(--vscode-button-secondaryBackground);
+  background-color: var(--chat-background, #1e1e1e);
   font-size: .85rem;
   cursor: pointer;
+  position: relative;
+  gap: 0;
 }
 
 details.capabilities-dropdown > summary::-webkit-details-marker {
   display: none; /* Hide default marker in WebKit browsers */
 }
 
-details.capabilities-dropdown > summary .capabilities-summary-label {
-  font-weight: 600;
-  position: relative;
-  padding-left: 1.2rem;
-  flex-grow: 1; /* Take available space */
-}
-
-details.capabilities-dropdown > summary .capabilities-summary-label::before {
+details.capabilities-dropdown > summary::before {
   content: '▸';
   position: absolute;
-  left: 0;
+  left: .4rem;
   top: 50%;
   transform: translateY(-50%);
   transition: .15s ease;
@@ -654,14 +693,8 @@ details.capabilities-dropdown > summary .capabilities-summary-label::before {
   line-height: 1;
 }
 
-details.capabilities-dropdown[open] > summary .capabilities-summary-label::before {
+details.capabilities-dropdown[open] > summary::before {
   content: '▾';
-}
-
-details.capabilities-dropdown > summary .toggle-icon {
-  margin-left: .8rem;
-  position: relative;
-  z-index: 1;
 }
 
 /* ─── CAPABILITIES CONTENT ─────────────────── */
@@ -692,5 +725,97 @@ details.capabilities-dropdown > summary .toggle-icon {
   accent-color: var(--btn-bg);
   cursor: pointer;
 }
+
+
+
+
+/* ─── CONTEXT MODE TOGGLE STYLES ───────────────── */
+.context-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.mode-label {
+  font-weight: 600;
+  color: var(--vscode-input-foreground);
+  font-size: 0.9rem;
+}
+
+/* Master toggle button - matches context-buttons styling exactly */
+.master-mode-toggle {
+  flex-shrink: 0;
+  font-size: .8rem;
+  padding: .2rem .6rem;
+  border: 1px solid var(--vscode-button-border, var(--vscode-editorWidget-border));
+  border-radius: 4px;
+  background-color: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+  cursor: pointer;
+  transition: .2s ease, transform .1s ease, box-shadow .2s ease;
+}
+
+.master-mode-toggle:hover {
+  background-color: var(--vscode-button-hoverBackground);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .16);
+}
+
+.master-mode-toggle:active {
+  animation: flash .2s;
+}
+
+/* Per-file mode toggle button - different style for individual file toggles */
+.file-mode-cycle-btn {
+  padding: 4px 8px;
+  background-color: transparent;
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 3px;
+  color: var(--vscode-input-foreground);
+  font-size: 0.75rem;
+  cursor: pointer;
+  margin-right: 6px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.file-mode-cycle-btn:hover {
+  background-color: var(--vscode-editorHoverWidget-background);
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Ensure master toggle doesn't inherit file-mode-cycle-btn styles */
+.file-mode-cycle-btn.master-mode-toggle {
+  padding: .2rem .6rem;
+  background-color: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+  border: 1px solid var(--vscode-button-border, var(--vscode-editorWidget-border));
+}
+
+.file-mode-cycle-btn.master-mode-toggle:hover {
+  background-color: var(--vscode-button-hoverBackground);
+  border-color: var(--vscode-button-border, var(--vscode-editorWidget-border));
+}
+
+/* Adjust file entry layout to accommodate mode toggle */
+.context-file-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-file-entry .file-info {
+  flex: 1;
+  min-width: 0; /* Allow shrinking for long filenames */
+}
+
+/* Ensure remove button stays at right edge */
+.remove-file-btn {
+  flex-shrink: 0;
+}
+
 
 

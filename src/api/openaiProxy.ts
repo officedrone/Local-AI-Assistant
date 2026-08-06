@@ -141,7 +141,6 @@ export async function streamFromOpenAI({
   let rawChunkCount = 0;
   while (true) {
     if (signal?.aborted) {
-      console.log('[openaiProxy] Aborted by user');
       try { await reader.cancel(); } catch {}
       throw new DOMException('Aborted', 'AbortError');
     }
@@ -151,11 +150,6 @@ export async function streamFromOpenAI({
 
     rawChunkCount++;
     const rawText = decoder.decode(value, { stream: true });
-    
-    // Log first few raw chunks to see what the API actually sends
-    if (rawChunkCount <= 3) {
-      console.log('[OPENAI RAW] Chunk', rawChunkCount, ':', rawText.substring(0, 500));
-    }
 
     buffer += rawText;
     const lines = buffer.split('\n');
@@ -174,12 +168,6 @@ export async function streamFromOpenAI({
       try {
         const parsed = JSON.parse(clean);
         const delta = parsed?.choices?.[0]?.delta;
-        
-        // Debug: Log the full delta structure once per stream
-        if (!debugDeltaLogged) {
-          console.log('[OPENAI DEBUG] Full delta:', delta);
-          debugDeltaLogged = true;
-        }
         
         const token = delta?.content;
         const reasoning = delta?.reasoning_content || delta?.reasoning || delta?.thought || delta?.thinking;

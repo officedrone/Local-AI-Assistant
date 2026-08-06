@@ -144,8 +144,6 @@ export async function streamFromOllama({
 
   const filteredMessages = filterOllamaMessages(messages);
 
-  console.log('Ollama request payload:', JSON.stringify({ model: finalModel, messages: filteredMessages, stream: true }, null, 2));
-
   const res = await fetch(`${normalizedEndpoint}/chat`, {
     method: 'POST',
     headers: {
@@ -173,7 +171,6 @@ export async function streamFromOllama({
   let rawChunkCount = 0;
   while (true) {
     if (signal?.aborted) {
-      console.log('[OllamaProxy] Aborted by user');
       try { await reader.cancel(); } catch {}
       throw new DOMException('Aborted', 'AbortError');
     }
@@ -183,11 +180,6 @@ export async function streamFromOllama({
 
     rawChunkCount++;
     const rawText = decoder.decode(value, { stream: true });
-    
-    // Log first few raw chunks to see what the API actually sends
-    if (rawChunkCount <= 3) {
-      console.log('[OLLAMA RAW] Chunk', rawChunkCount, ':', rawText.substring(0, 500));
-    }
 
     buffer += rawText;
 
@@ -199,12 +191,6 @@ export async function streamFromOllama({
       try {
         const parsed = JSON.parse(line);
         const message = parsed?.message;
-        
-        // Debug: Log the full message structure once per stream
-        if (!ollamaDebugDeltaLogged && message) {
-          console.log('[OLLAMA DEBUG] Full message:', message);
-          ollamaDebugDeltaLogged = true;
-        }
         
         const token = message?.content;
         const reasoning = message?.reasoning_content || message?.reasoning || message?.thought || message?.thinking;

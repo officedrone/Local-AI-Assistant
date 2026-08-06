@@ -68,7 +68,6 @@ export async function routeChatRequest({
       });
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        console.log('[apiRouter] stream aborted');
         safePost(panel, { type: 'stoppedStream', message: '' });
         return;
       }

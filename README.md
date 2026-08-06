@@ -1,6 +1,6 @@
 # Local AI Assistant
 
-A Visual Studio Code extension that connects to a local LLM (Large Language Model) API endpoint and provides code completion, validation, and query-via-chat functionality. Perfect for developers using private or offline models running on their workstation or on the local network.
+A Visual Studio Code extension that connects to a LLM (Large Language Model) API endpoint and provides code completion, validation, and provides query-via-chat, code completion, and code validation functionality (agentic stuff are work in progress). Perfect for developers using private or offline models running on their workstation or on the local network.
 
 ## Requirements
 
@@ -12,22 +12,23 @@ A Visual Studio Code extension that connects to a local LLM (Large Language Mode
 
 The extension must be connected to your LLM before you can use it. Follow the steps below to connect it.
 
-1. Install an LLM service provider such as [LM Studio](https://lmstudio.ai/) if you haven't already
+1. Install a LLM service provider such as [LM Studio](https://lmstudio.ai/) if you haven't already
 2. Start the servce and host your model on the network
 3. Install the extension in your VS Code
 4. Launch the extension from status bar button (bottom left) or by using the keyboard shortcut CTRL + ALT + SHIFT + C
 5. From the main UI, set up the URL, API Type (OpenAPI-compatible vs Ollama), and the model you want to use.
-6. (Optional) Add an API key or specify a model if your service requires them
+6. (Optional) Add an API key or specify a model if your service requires them using CTRL + ALT + SHIFT + K
 
    ![URL setup demo](./media/readme-setup.gif)
 
 ## Features List
 
+- Chat with the LLM
 - Code validation / Code completion in chat
 - Code completion (in-line) - Coming soon
 - Tooltip / Right-click menu with extension commands
 - File context management (add single file, all open files, clear context, add current file)
-- Chat / Extension Settings UI
+- Extension Settings UI
 
 ## Validate Code Block
 
@@ -141,10 +142,9 @@ Accessible via:
 
 ## Known Issues
 
-- Ollama support is limited
 - API Key is optional and usage applies to OpenAI-based back-ends only
-- Temporary freeze possible if endpoint is unreachable during stream
 - Auto-scroll can be wonky
+- Context addition can be wonky, use 'Full files' context if you experience issues
 
 ---
 

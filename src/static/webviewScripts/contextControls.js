@@ -1,8 +1,51 @@
 // src/static/webviewScripts/contextControls.js
 
 const contextList = document.getElementById('contextFileList'); // container in your HTML
+let currentFiles = [];
+
+function calculateMasterState(files) {
+  if (!files || files.length === 0) return 'smart';
+  
+  const allFull = files.every(f => f.sendFullFile === true);
+  const allSmart = files.every(f => (f.sendFullFile ?? false) === false);
+  
+  if (allFull) return 'full';
+  if (allSmart) return 'smart';
+  return 'mixed';
+}
+
+function updateMasterToggleDisplay(state) {
+  const btn = document.getElementById('masterModeToggle');
+  if (!btn) return;
+  
+  if (state === 'smart') {
+    btn.textContent = 'Smart Slicing ↻';
+  } else if (state === 'full') {
+    btn.textContent = 'Full Files ↻';
+  } else { // mixed - just show smart as default clickable option
+    btn.textContent = 'Mixed (click to reset) ↻';
+  }
+}
 
 export function setupContextControls(vscode) {
+  const masterModeToggle = document.getElementById('masterModeToggle');
+  if (masterModeToggle) {
+    masterModeToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Always send the opposite of current majority state, or smart if mixed
+      const files = currentFiles;
+      const fullCount = files.filter(f => f.sendFullFile === true).length;
+      const smartCount = files.length - fullCount;
+      
+      const newMode = smartCount >= fullCount ? 'full' : 'smart';
+      
+      vscode.postMessage({ 
+        type: 'setAllMode', 
+        mode: newMode 
+      });
+    });
+  }
+
   // Open settings link (optional element)
   document.getElementById('editContextLink')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -97,6 +140,14 @@ export function updateContextFileList(vscode, files) {
   if (!contextList) return;
 
   const contextSize = Number(document.body.dataset.contextSize || '4096');
+  
+  // Update the main dropdown token count in the summary
+  const totalTokens = files ? files.reduce((sum, f) => sum + f.tokens, 0) : 0;
+  const tokenCountSpan = document.getElementById('contextSummaryTokenCount');
+  if (tokenCountSpan) {
+    tokenCountSpan.textContent = totalTokens.toString();
+  }
+
   const prevDetails = contextList.querySelector('details.context-files-dropdown');
   const wasOpen = prevDetails?.open ?? false;
 
@@ -130,6 +181,21 @@ export function updateContextFileList(vscode, files) {
       left.classList.add('context-over-limit');
     }
 
+    const modeToggle = document.createElement('button');
+    modeToggle.className = 'file-mode-cycle-btn';
+    const isFull = f.sendFullFile ?? false;
+    modeToggle.textContent = `${isFull ? 'Full Files' : 'Smart Slicing'} ↻`;
+    modeToggle.title = 'Click to cycle context mode (Smart Slicing ↔ Full Files)';
+    
+    modeToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      vscode.postMessage({ 
+        type: 'toggleFileMode', 
+        uri: f.uri,
+        sendFullFile: !isFull
+      });
+    });
+
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '✕';
     removeBtn.className = 'remove-file-btn';
@@ -139,6 +205,7 @@ export function updateContextFileList(vscode, files) {
     });
 
     entry.appendChild(left);
+    entry.appendChild(modeToggle);
     entry.appendChild(removeBtn);
     return entry;
   };
@@ -166,7 +233,7 @@ export function updateContextFileList(vscode, files) {
 
     const summaryContent = document.createElement('span');
     summaryContent.className = 'context-summary-label';
-    summaryContent.textContent = `Files in context: (${files.length}) (${totalTokens} tokens)`;
+    summaryContent.textContent = `(${files.length}) files`;
 
     if (totalTokens > contextSize) {
       summaryContent.classList.add('context-over-limit');
@@ -193,4 +260,9 @@ export function updateContextFileList(vscode, files) {
     details.appendChild(list);
     contextList.appendChild(details);
   }
+
+  const state = calculateMasterState(files);
+  updateMasterToggleDisplay(state);
+  
+  currentFiles = files;
 }

@@ -96,24 +96,19 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
         const onToken = (chunk: string) => {
           assistantText += chunk;
 
-          // Re-encode full assistantText to compute actual new tokens
           const fullCount = encodingForModel.encode(assistantText).length;
           const delta = fullCount - lastFullCount;
           lastFullCount = fullCount;
 
-          // Update session token count by delta (assistant tokens)
           addChatTokens(delta);
 
-          // Send updated total tokens for this bubble
           panel.webview.postMessage({
             type: 'tokenUpdate',
             tokens: fullCount
           });
         };
 
-        const onDone = () => {
-          console.log(`✅ Assistant response token count: ${lastFullCount}`);
-        };
+        const onDone = () => {};
 
         // 🔑 Send both chatTokens and fileTokens so bubble can render both
         panel.webview.postMessage({
@@ -192,7 +187,6 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           const delta = fullCount - lastFullCount;
           lastFullCount = fullCount;
 
-          // Add assistant tokens
           addChatTokens(delta);
 
           panel.webview.postMessage({
@@ -201,9 +195,7 @@ export function registerCodeActions(context: vscode.ExtensionContext) {
           });
         };
 
-        const onDone = () => {
-          console.log(`✅ Assistant response token count: ${lastFullCount}`);
-        };
+        const onDone = () => {};
 
         // 🔑 Send both chatTokens and fileTokens so bubble can render both
         panel.webview.postMessage({

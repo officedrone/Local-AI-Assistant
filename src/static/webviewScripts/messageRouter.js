@@ -243,13 +243,6 @@ export function setupMessageRouter(vscode, contextSize) {
           }
         }
 
-        console.log('[MSG] Chunk received:', { 
-          currentState, 
-          inThinkingBlock, 
-          chunkLength: chunk.length, 
-          chunkPreview: chunk.substring(0, 300) 
-        });
-
         // ========== TOOL CALL DETECTION (Highest Priority) ==========
 /*         const toolOpenIdx = toolCallBuffer.indexOf(TOOL_CALL_OPEN);
         if (!toolCallBuffer.includes(TOOL_CALL_CLOSE) && toolOpenIdx !== -1) {
@@ -348,9 +341,6 @@ export function setupMessageRouter(vscode, contextSize) {
         }
                 // ========== CHECK FOR COMPLETE TAGS FIRST ==========
         if (isThinkingTagOpen(chunk)) {
-          console.log('[MSG] OPENING TAG DETECTED! Creating thinking bubble...');
-          console.log('[MSG] Tag chunk:', chunk.substring(0, 100));
-
           transitionFromPlaceholder();
 
           const thinkingElem = createThinkingBubble();
@@ -358,8 +348,6 @@ export function setupMessageRouter(vscode, contextSize) {
 
           inThinkingBlock = true;
           currentState = STREAMING_STATE.THINKING;
-
-          console.log('[MSG] State changed to THINKING, bubble count:', getThinkingBubbles().length);
 
           chunk = extractContentFromTags(chunk, true);
         } else if (isThinkingTagClose(chunk) && inThinkingBlock) {
@@ -394,14 +382,8 @@ export function setupMessageRouter(vscode, contextSize) {
           if (!chunk.trim()) {
             return;
           }
-        } else {
-          console.log('[MSG] Checking for tags:', { 
-            isOpeningTag: isThinkingTagOpen(chunk), 
-            isClosingTag: isThinkingTagClose(chunk),
-            chunkPreview: chunk.substring(0, 100) 
-          });
-
-          const combinedBuffer = regularStreamBuffer + chunk;
+          } else {
+           const combinedBuffer = regularStreamBuffer + chunk;
           const hasPartialTag = hasPotentialTagFragment(
             combinedBuffer, 
             thinkingTagOpen, 
@@ -409,7 +391,6 @@ export function setupMessageRouter(vscode, contextSize) {
           );
 
           if (hasPartialTag && !inThinkingBlock && currentState !== STREAMING_STATE.TOOL_CALL) {
-            console.log('[MSG] Partial tag detected, buffering chunk');
             regularStreamBuffer += chunk;
 
             if (shouldAutoScroll) scheduleScrollToBottom();
@@ -417,17 +398,8 @@ export function setupMessageRouter(vscode, contextSize) {
           }
         }
 
-        // ========== PROCESS CHUNK BASED ON STATE ==========
-        console.log('[MSG] Before state processing:', { 
-          inThinkingBlock, 
-          bubblesCount: getThinkingBubbles().length,
-          currentState,
-          chunkPreview: chunk.substring(0, 100)
-        });
-
         const currentBubbles = getThinkingBubbles();
         if (inThinkingBlock && currentBubbles.length > 0) {
-          console.log('[MSG] Adding to thinking buffer');
           const lastBubble = currentBubbles[currentBubbles.length - 1];
           lastBubble.buffer += chunk;
 
@@ -468,7 +440,6 @@ export function setupMessageRouter(vscode, contextSize) {
 
 
       case 'editPreview': {
-        console.log('WEBVIEW ← editPreview', ev.data);
         const { content, uri, edits, preview } = ev.data;
 
         // Store globally for later use
@@ -720,7 +691,14 @@ export function setupMessageRouter(vscode, contextSize) {
       case 'streamTokenUpdate': {
         const state = getStreamingState();
         if (state.assistantElem && typeof ev.data.tokens === 'number') {
-          // Update token count on the assistant bubble
+          // Skip placeholder bubbles - they don't have token footers
+          if (state.assistantElem.classList.contains('placeholder-bubble')) {
+            break;
+          }
+          // Update token count only on assistant/response bubbles, not thinking bubbles
+          if (state.assistantElem.classList.contains('thinking-bubble')) {
+            break;
+          }
           updateBubbleTokenCount(state.assistantElem, ev.data.tokens, ev.data.tps);
         }
         break;

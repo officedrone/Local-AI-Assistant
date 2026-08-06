@@ -103,17 +103,28 @@ export function getWebviewContent(
   </div>
 
   <!--Multi-file context controls -->
-  <div id="contextControls">
-    <div class="context-buttons">
-      <button id="addCurrentBtn" title="Add the active editor">📄 Add Current</button>
-      <button id="addFileBtn" title="Add a file from disk">➕ Add File</button>
-      <button id="addEditorsBtn" title="Add all opened editors">📂 Add Editors</button>
-      <button id="clearContextBtn" title="Clear context files">🗑️ Clear</button>
-    </div>
-    <div id="contextFileList" class="context-file-list">
-      <em>No files in context</em>
-    </div>
-  </div>
+  <details class="context-section-dropdown" open>
+    <summary>
+      Context (<span id="contextSummaryTokenCount">0</span>&nbsp;tokens)
+    </summary>
+      <div id="contextControls">
+        <div class="context-buttons">
+          <button id="addCurrentBtn" title="Add the active editor">📄 Add Current</button>
+          <button id="addFileBtn" title="Add a file from disk">➕ Add File</button>
+          <button id="addEditorsBtn" title="Add all opened editors">📂 Add Editors</button>
+          <button id="clearContextBtn" title="Clear context files">🗑️ Clear</button>
+        </div>
+
+        <div id="contextFileList" class="context-file-list">
+          <em>No files in context</em>
+        </div>
+
+        <div class="context-mode-row">
+          <span class="mode-label">Context Mode:</span>
+          <button id="masterModeToggle" class="file-mode-cycle-btn master-mode-toggle" title="Click to toggle between Smart Slicing and Full Files for all files">Smart Slicing ↻</button>
+        </div>
+      </div>
+  </details>
 
   <!-- Agent controls -->
   <details class="capabilities-dropdown">

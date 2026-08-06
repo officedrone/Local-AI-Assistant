@@ -9,7 +9,9 @@ import {
   addAllOpenEditorsToContext,
   clearContextFiles,
   getContextFiles,
-  extractRelevantSlices
+  extractRelevantSlices,
+  saveSessionContextState,
+  restoreSessionContextState
 } from './chatPanelContext';
 
 
@@ -105,6 +107,18 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       case 'addFileToContext': {
         if (evt.uri) {
           await addFileToContext(vscode.Uri.parse(evt.uri));
+          
+          const files = getContextFiles();
+          const fullCount = files.filter(f => f.sendFullFile === true).length;
+          const smartCount = files.length - fullCount;
+          const defaultMode = smartCount >= fullCount ? false : true;
+          
+          files.forEach(f => {
+            if (f.sendFullFile === undefined) {
+              f.sendFullFile = defaultMode;
+            }
+          });
+          
           updatePendingFileTokens();
         }
         break;
@@ -117,16 +131,27 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       const ed = vscode.window.activeTextEditor;
       if (ed) {
         await addFileToContext(ed.document.uri);
+        
+        const files = getContextFiles();
+        const fullCount = files.filter(f => f.sendFullFile === true).length;
+        const smartCount = files.length - fullCount;
+        const defaultMode = smartCount >= fullCount ? false : true;
+        
+        const addedFile = files[files.length - 1];
+        if (addedFile && addedFile.sendFullFile === undefined) {
+          addedFile.sendFullFile = defaultMode;
+        }
+        
         updatePendingFileTokens();
         lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
 
         // Update UI immediately
-        const files = getContextFiles().map(f => ({
+        const filesForUI = getContextFiles().map(f => ({
           uri: f.uri.toString(),
           language: f.language,
           tokens: f.tokens
         }));
-        panel.webview.postMessage({ type: 'contextUpdated', files });
+        panel.webview.postMessage({ type: 'contextUpdated', files: filesForUI });
       } else {
         vscode.window.showWarningMessage('No active editor to add.');
       }
@@ -135,7 +160,29 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
       case 'addEditors': {
         await addAllOpenEditorsToContext();
+        
+        const files = getContextFiles();
+        const fullCount = files.filter(f => f.sendFullFile === true).length;
+        const smartCount = files.length - fullCount;
+        const defaultMode = smartCount >= fullCount ? false : true;
+        
+        files.forEach(f => {
+          if (f.sendFullFile === undefined) {
+            f.sendFullFile = defaultMode;
+          }
+        });
+        
         updatePendingFileTokens();
+        lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+
+        // Update UI immediately
+        const filesForUI = getContextFiles().map(f => ({
+          uri: f.uri.toString(),
+          language: f.language,
+          tokens: f.tokens,
+          sendFullFile: f.sendFullFile ?? false
+        }));
+        panel.webview.postMessage({ type: 'contextUpdated', files: filesForUI });
         break;
       }
 
@@ -151,6 +198,18 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
           for (const uri of uris) {
             await addFileToContext(uri);
           }
+          
+          const files = getContextFiles();
+          const fullCount = files.filter(f => f.sendFullFile === true).length;
+          const smartCount = files.length - fullCount;
+          const defaultMode = smartCount >= fullCount ? false : true;
+          
+          files.forEach(f => {
+            if (f.sendFullFile === undefined) {
+              f.sendFullFile = defaultMode;
+            }
+          });
+          
           updatePendingFileTokens();
         }
         break;
@@ -173,6 +232,58 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       case 'clearContext': {
         clearContextFiles();
         updatePendingFileTokens();
+        break;
+      }
+
+      case 'toggleFileMode': {
+        if (evt.uri) {
+          const uri = vscode.Uri.parse(evt.uri);
+          const file = getContextFiles().find(f => f.uri.toString() === uri.toString());
+          
+          if (file) {
+            file.sendFullFile = evt.sendFullFile ?? false;
+            
+            lastContextState = getContextFiles().map(f => ({ 
+              uri: f.uri.toString(), 
+              tokens: f.tokens 
+            }));
+            
+            panel.webview.postMessage({
+              type: 'contextUpdated',
+              files: getContextFiles().map(f => ({
+                uri: f.uri.toString(),
+                language: f.language,
+                tokens: f.tokens,
+                sendFullFile: f.sendFullFile ?? false
+              }))
+            });
+          }
+        }
+        break;
+      }
+
+      case 'setAllMode': {
+        const newMode = evt.mode === 'full';
+        
+        getContextFiles().forEach(f => {
+          f.sendFullFile = newMode;
+        });
+        
+        lastContextState = getContextFiles().map(f => ({ 
+          uri: f.uri.toString(), 
+          tokens: f.tokens 
+        }));
+        
+        panel.webview.postMessage({
+          type: 'contextUpdated',
+          files: getContextFiles().map(f => ({
+            uri: f.uri.toString(),
+            language: f.language,
+            tokens: f.tokens,
+            sendFullFile: f.sendFullFile ?? false
+          }))
+        });
+        
         break;
       }
 
@@ -261,8 +372,8 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         conversation = [];
         lastFileContextTokens = 0;
 
-        // Snapshot the URIs of files currently in context (respects removals)
-        const previousContextUris = getContextFiles().map(f => f.uri.toString());
+        // Save current session state including file modes
+        const savedState = saveSessionContextState();
 
         // Reset multi-file tracking
         seenFiles.clear();
@@ -276,48 +387,8 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
         const newPanel = getOrCreateChatPanel();
 
-        // Ensure active editor is available
-        await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
-        const active = vscode.window.activeTextEditor;
-        const activeUri = active?.document.uri.toString();
-
-        // Decide what to re-add based on intent rules
-        let urisToReAdd: string[] = [];
-
-        if (previousContextUris.length === 0) {
-          // No previous context → just the active file (if any)
-          if (activeUri) urisToReAdd = [activeUri];
-        } else if (previousContextUris.length === 1) {
-          // One previous file:
-          // - if active is the same → keep it
-          // - if different → use active only
-          if (activeUri) {
-            urisToReAdd = [activeUri];
-          } else {
-            urisToReAdd = previousContextUris;
-          }
-        } else {
-          // Multiple previous files:
-          // - if active is in the previous set → restore all
-          // - if active is different → use active only
-          if (activeUri) {
-            if (previousContextUris.includes(activeUri)) {
-              urisToReAdd = previousContextUris;
-            } else {
-              urisToReAdd = [activeUri];
-            }
-          } else {
-            urisToReAdd = previousContextUris;
-          }
-        }
-
-        // Clear context before re-adding to avoid union behavior
-        clearContextFiles();
-
-        // Re-add with fresh reload (intent set only)
-        for (const uriStr of urisToReAdd) {
-          await addFileToContext(vscode.Uri.parse(uriStr), true);
-        }
+        // Restore context files with their modes preserved
+        await restoreSessionContextState();
 
         updatePendingFileTokens();
         lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
@@ -325,11 +396,13 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         const files = getContextFiles().map(f => ({
           uri: f.uri.toString(),
           language: f.language,
-          tokens: f.tokens
+          tokens: f.tokens,
+          sendFullFile: f.sendFullFile ?? false
         }));
         newPanel.webview.postMessage({ type: 'contextUpdated', files });
 
         lastFileContextTokens = getEffectiveFileContextTokens();
+        postFileContextTokens(newPanel);
         refreshTokenStats(newPanel);
         updateApiStatus(newPanel);
         break;
@@ -389,15 +462,16 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
             uri: f.uri.toString(),
             tokens: f.tokens
           }));
-
-          // Immediately inform the webview so the UI reflects the added file
-          const files = getContextFiles().map(f => ({
-            uri: f.uri.toString(),
-            language: f.language,
-            tokens: f.tokens
-          }));
-          panel.webview.postMessage({ type: 'contextUpdated', files });
         }
+
+        // Send full context with mode information to preserve restored states
+        const files = getContextFiles().map(f => ({
+          uri: f.uri.toString(),
+          language: f.language,
+          tokens: f.tokens,
+          sendFullFile: f.sendFullFile ?? false
+        }));
+        panel.webview.postMessage({ type: 'contextUpdated', files });
 
         // Re-send token totals and refresh the visible token stats
         postFileContextTokens(panel);

@@ -21,13 +21,17 @@ export function updateTokenPanel({ sessionTokens, fileContextTokens, totalTokens
 }
 
 export function updateFileContextTokens(tokens, contextSize) {
-  // Update only the header count (live effective context)
-  const contextTokenSpan = document.getElementById('contextTokenCount');
-  if (contextTokenSpan) {
-    contextTokenSpan.textContent = `(${tokens} tokens)`;
-    contextTokenSpan.style.color = tokens > contextSize ? 'orange' : '';
+  // Update the Context section summary token count
+  const summaryTokenCount = document.getElementById('contextSummaryTokenCount');
+  if (summaryTokenCount) {
+    summaryTokenCount.textContent = String(tokens);
+    
+    // Update color based on limit
+    const summaryText = summaryTokenCount.parentElement;
+    if (summaryText) {
+      summaryText.style.color = tokens > contextSize ? 'orange' : '';
+    }
   }
-
 
   // Adjust total color if needed
   const totalSpan = document.getElementById('totalTokenCount');

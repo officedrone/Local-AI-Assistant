@@ -11,7 +11,6 @@ const vscode = acquireVsCodeApi();
 
 // Execute when DOM is fully loaded to initialize all components
 window.addEventListener('DOMContentLoaded', () => {
-  console.log('Main.js loaded and DOM ready');
   const contextSize = Number(document.body.dataset.contextSize) || 4096;
 
   setupScrollHandling();
@@ -33,9 +32,15 @@ window.addEventListener('DOMContentLoaded', () => {
   // Close context files dropdown when clicking outside of it
   document.addEventListener('click', (e) => {
     const details = document.querySelector('details.context-files-dropdown');
-    if (details?.open && !details.contains(e.target)) {
-      details.open = false;
+    if (!details?.open) return;
+    
+    // Don't close if clicking on context control buttons or mode toggles
+    const contextButtons = document.getElementById('contextControls');
+    if (contextButtons && contextButtons.contains(e.target)) {
+      return;
     }
+    
+    details.open = false;
   });
 
   // Open settings panel when settings button is clicked
@@ -89,12 +94,9 @@ window.addEventListener('message', (event) => {
     updateContextFileList(vscode, files);
   }
 
-  // Log tool execution results (success or failure)
   if (msg.type === 'toolResult') {
     const { tool, success, data, error } = msg;
-    if (success) {
-      console.log(`✅ Tool ${tool} succeeded`, data);
-    } else {
+    if (!success) {
       console.error(`❌ Tool ${tool} failed:`, error);
     }
   }

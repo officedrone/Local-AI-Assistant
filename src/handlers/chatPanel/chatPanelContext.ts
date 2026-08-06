@@ -11,9 +11,16 @@ export interface FileContext {
   lines: { n: number; text: string }[];
   summary: string;
   tokens: number;
+  sendFullFile?: boolean;
+}
+
+interface SessionContextState {
+  uris: string[];
+  fileModes: Map<string, boolean>;
 }
  
 let contextFiles: FileContext[] = [];
+let sessionContextState: SessionContextState | null = null;
 
 /**
  * Return the "primary" code editor (active or first visible non-webview).
@@ -38,7 +45,7 @@ export function getContextFiles(): FileContext[] {
 /**
  * Add a file to the context by URI.
  */
-export async function addFileToContext(uri: vscode.Uri, forceReload: boolean = false): Promise<void> {
+export async function addFileToContext(uri: vscode.Uri, forceReload: boolean = false, suppressNotification: boolean = false): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(uri);
 
   // Only check for duplicates if not forcing reload
@@ -60,7 +67,10 @@ export async function addFileToContext(uri: vscode.Uri, forceReload: boolean = f
     summary: await generateFileSummary(text, doc.languageId),
     tokens: countTextTokens(text)
   });
-  notifyContextUpdated();
+  
+  if (!suppressNotification) {
+    notifyContextUpdated();
+  }
 }
 
 /**
@@ -69,6 +79,68 @@ export async function addFileToContext(uri: vscode.Uri, forceReload: boolean = f
 export function removeFileFromContext(uri: vscode.Uri): void {
   contextFiles = contextFiles.filter(f => f.uri.toString() !== uri.toString());
   notifyContextUpdated();
+}
+
+/**
+ * Save current session state for restoration in new sessions.
+ */
+export function saveSessionContextState(): SessionContextState {
+  const uris = contextFiles.map(f => f.uri.toString());
+  const fileModes = new Map<string, boolean>();
+  contextFiles.forEach(f => {
+    if (f.sendFullFile !== undefined) {
+      fileModes.set(f.uri.toString(), f.sendFullFile);
+    }
+  });
+  
+  sessionContextState = { uris, fileModes };
+  return sessionContextState;
+}
+
+/**
+ * Restore context files from saved state with their modes preserved.
+ */
+export async function restoreSessionContextState(): Promise<void> {
+  if (!sessionContextState) {
+    return;
+  }
+  
+  // Add all files without triggering notifications during batch operation
+  for (const uriStr of sessionContextState.uris) {
+    const uri = vscode.Uri.parse(uriStr);
+    try {
+      await addFileToContext(uri, true, true);
+      
+      const file = contextFiles.find(f => f.uri.toString() === uriStr);
+      if (file && sessionContextState.fileModes.has(uriStr)) {
+        file.sendFullFile = sessionContextState.fileModes.get(uriStr);
+      }
+    } catch (err) {
+      console.warn(`Failed to restore file ${uriStr}:`, err);
+    }
+  }
+  
+  // Send single consolidated notification after all files are restored with modes
+  notifyContextUpdated();
+}
+
+/**
+ * Internal notification helper.
+ */
+function notifyContextUpdated() {
+  const panel = getActiveChatPanel();
+  if (!panel) return;
+  
+  panel.webview.postMessage({
+    type: 'contextUpdated',
+    files: getContextFiles().map(f => ({
+      uri: f.uri.toString(),
+      language: f.language,
+      tokens: f.tokens,
+      sendFullFile: f.sendFullFile ?? false
+    }))
+  });
+  postFileContextTokens(panel);
 }
 
 /**
@@ -118,21 +190,6 @@ export async function addAllOpenEditorsToContext(forceReload: boolean = false) {
   notifyContextUpdated();
 }
 
-function notifyContextUpdated() {
-  const panel = getActiveChatPanel();
-  if (panel) {
-    panel.webview.postMessage({
-      type: 'contextUpdated',
-      files: getContextFiles().map(f => ({
-        uri: f.uri.toString(),
-        language: f.language,
-        tokens: f.tokens
-      }))
-    });
-    postFileContextTokens(panel);
-  }
-}
-
 //Summary generator
 async function generateFileSummary(text: string, language: string): Promise<string> {
   const firstLines = text.split(/\r?\n/).slice(0, 20).join("\n");
@@ -143,10 +200,25 @@ async function generateFileSummary(text: string, language: string): Promise<stri
 export function extractRelevantSlices(
   file: FileContext,
   userMessage: string,
-  padding = 30,
-  maxTokens = 4000
+  padding = 50,
+  maxTokens?: number
 ) {
   if (!userMessage || !file.lines.length) return [];
+
+  // Check if user wants to send full file (bypass smart slicing)
+  if (file.sendFullFile === true) {
+    const allLines = file.lines.map((line, idx) => ({
+      n: idx + 1,
+      text: line.text
+    }));
+    
+    return [{
+      startLine: 1,
+      endLine: file.lines.length,
+      lines: allLines,
+      tokens: Math.ceil(file.lines.reduce((acc, l) => acc + l.text.length / 1.4, 0))
+    }];
+  }
 
   // 1. Extract meaningful keywords
   const keywords = userMessage
@@ -203,10 +275,6 @@ export function extractRelevantSlices(
 
     // More accurate token estimation (chars / 1.4 for code)
     const sliceTokens = sliceLines.reduce((acc, line) => acc + line.text.length / 1.4, 0);
-
-    if (maxTokens && accumulatedTokens + sliceTokens > maxTokens) {
-      break;
-    }
 
     resultSlices.push({
       startLine: minLine + 1,  // Convert to 1-based

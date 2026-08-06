@@ -60,8 +60,6 @@ export function createThinkingBubble() {
   bubble.className = 'message ai-message thinking-bubble';
   bubble.id = `thinking-${Date.now()}`;
 
-  console.log('<think> [DEBUG] createThinkingBubble called, ID:', bubble.id);
-
   bubble.innerHTML = `
     <div class="markdown-body thinking-container">
       <details class="thinking-details" open>
