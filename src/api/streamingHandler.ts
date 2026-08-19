@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { sendToOpenAI, streamFromOpenAI } from './openaiProxy';
 import { streamFromOllama } from './ollamaProxy';
 import encodingForModel from 'gpt-tokenizer';
-import { isStreamingActive } from '../commands/tokenActions';
+import { isStreamingActive, setStreamingActive } from '../commands/tokenActions';
 
 export interface StreamingResponseOptions {
   model: string;
@@ -34,7 +34,13 @@ export async function handleStreamingResponse({
   onToken,
   onDone,
 }: StreamingResponseOptions): Promise<void> {
-  // Notify the webview we're starting a new stream
+  const requestId = Date.now();
+  
+  // Track how many chunks we actually send to the webview
+  let chunksSentToWebview = 0;
+  
+  console.log(`[handleStreamingResponse] Starting request ${requestId}, model=${model}, messages=${messages.length}`);
+  
   panel.webview.postMessage({ type: 'startStream', message: '' });
 
   let assistantText = '';
@@ -43,15 +49,35 @@ export async function handleStreamingResponse({
 
   // Guard so finalize() can only run one time
   let didFinalize = false;
-  const finalize = () => {
+  let streamCompleted = false; // Track if we've received [DONE] from the API
+  
+  const finalize = async () => {
     if (didFinalize) return;
     didFinalize = true;
+    
+    // Mark that streaming has completed - new chunks after this are late
+    streamCompleted = true;
+
+    console.log(`[finalize] Called, assistantText length=${assistantText.length}, isStreamingActive=${isStreamingActive(panel)}, chunksSentToWebview=${chunksSentToWebview}`);
+    
+    // Debug: Log the last few messages to understand what triggered this
+    const lastMsg = messages[messages.length - 1];
+    console.log(`[finalize] Last message role: ${lastMsg?.role}, content length: ${lastMsg?.content?.length ?? 0}`);
+    
+    // Check if assistant text contains a tool call
+    const hasToolCall = assistantText.includes('<tool>');
+    console.log(`[finalize] Assistant text contains tool call: ${hasToolCall}`);
 
     // If the stream was stopped, don't finalize UI tokens or append to history
     if (!isStreamingActive(panel)) {
+      console.log(`[finalize] Stream already stopped (isStreamingActive=false), skipping finalization`);
       panel.webview.postMessage({ type: 'stoppedStream', message: '' });
       return;
     }
+
+    // DON'T clear streaming flag yet - wait until after endStream is sent
+    // This prevents race condition where late chunks get dropped
+    console.log(`[finalize] Streaming flag still active, proceeding with finalization`);
 
     const finalTokens = encodingForModel.encode(assistantText).length;
 
@@ -67,14 +93,40 @@ export async function handleStreamingResponse({
       tps: parseFloat(tps)
     });
 
-    // Close out the stream
-    panel.webview.postMessage({ type: 'endStream', message: '' });
+    // Close out the stream - but only if we haven't already started a continuation
+    console.log(`[finalize] Checking stream state before sending endStream...`);
+    
+    // Wait to ensure all chunk messages are processed in webview queue
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    // Check if streaming is still marked as active (might have been cleared by continuation)
+    const streamStillActive = isStreamingActive(panel);
+    console.log(`[finalize] After delay: isStreamingActive=${streamStillActive}, chunksSentToWebview=${chunksSentToWebview}`);
+    
+    if (streamStillActive || chunksSentToWebview === 0) {
+      // Either still active (continuation started) or no chunks were sent - skip endStream
+      console.log(`[finalize] Skipping endStream: streamStillActive=${streamStillActive}, noChunks=${chunksSentToWebview === 0}`);
+    } else {
+      console.log(`[finalize] Sending endStream after ${chunksSentToWebview} chunks`);
+      panel.webview.postMessage({ type: 'endStream', message: '' });
+      console.log(`[finalize] endStream sent successfully`);
+      
+      // NOW clear the streaming flag AFTER endStream is sent
+      console.log(`[finalize] Clearing streaming flag after endStream`);
+      setStreamingActive(panel, false);
+    }
 
-    // Add to conversation history
+    console.log(`[finalize] Stream completed successfully, assistantText length=${assistantText.length}`);
+
+    // Add to conversation history BEFORE calling onDone so continuation can see it
     messages.push({ role: 'assistant', content: assistantText });
+    
+    console.log(`[finalize] Added assistant message to conversation`);
 
-    // Notify upstream that streaming is done
-    if (onDone) onDone();
+    if (onDone) {
+      console.log(`[finalize] Calling onDone callback`);
+      onDone();
+    }
   };
 
 
@@ -85,15 +137,44 @@ export async function handleStreamingResponse({
         model,
         messages: ollamaMessages,
         signal,
-        onToken: (chunk: string) => {
-          // Drop late chunks after Stop
-          if (!isStreamingActive(panel) || signal?.aborted) return;
+          onToken: (chunk: string) => {
+            console.log(`[streamFromOllama] Chunk arrived, isStreamingActive=${isStreamingActive(panel)}, signalAborted=${signal?.aborted}, assistantTextLength=${assistantText.length}`);
+            
+            // Only drop chunks if explicitly aborted OR stream has already completed
+            // This prevents dropping chunks that arrive during the brief window between [DONE] and finalize()
+            if (signal?.aborted) {
+              console.log(`[streamFromOllama] Dropping chunk because signal was aborted`);
+              return;
+            }
+            
+            if (streamCompleted) {
+              console.log(`[streamFromOllama] Dropping late chunk - stream already completed`);
+              return;
+            }
 
-          assistantText += chunk;
+          console.log(`[streamFromOllama] Received chunk, length=${chunk.length}, assistantText now ${assistantText.length} chars`);
           
-          // IMPORTANT: Send raw chunk WITHOUT stripping thinking/tool tags
-          // The webview will handle tag detection and bubble creation
-          panel.webview.postMessage({ type: 'streamChunk', message: chunk });
+          // Debug: Log first few chunks to verify content
+          if (chunksSentToWebview <= 3) {
+            console.log(`[streamFromOllama] First chunk #${chunksSentToWebview}: "${chunk.substring(0, 100)}"`);
+          }
+
+            assistantText += chunk;
+            
+            chunksSentToWebview++;
+            console.log(`[streamFromOllama] Sending streamChunk to webview (chunk #${chunksSentToWebview}), length=${chunk.length}`);
+            // IMPORTANT: Send raw chunk WITHOUT stripping thinking/tool tags
+            // The webview will handle tag detection and bubble creation
+            try {
+              const msg = { type: 'streamChunk', message: chunk };
+              panel.webview.postMessage(msg);
+              console.log(`[streamFromOllama] postMessage sent successfully for chunk #${chunksSentToWebview}`);
+            } catch (err) {
+            console.error(`[streamFromOllama] postMessage failed:`, err);
+            
+            // CRITICAL: If postMessage fails, don't count this as a successful chunk
+            chunksSentToWebview--;
+          }
 
           // NEW: Send real-time token count during streaming
           if (onToken) onToken(chunk);
@@ -130,14 +211,43 @@ export async function handleStreamingResponse({
           messages,
           signal,
           onToken: (chunk: string) => {
-            // Drop late chunks after Stop
-            if (!isStreamingActive(panel) || signal?.aborted) return;
+            console.log(`[streamFromOpenAI] Chunk arrived, isStreamingActive=${isStreamingActive(panel)}, signalAborted=${signal?.aborted}, assistantTextLength=${assistantText.length}`);
+            
+            // Only drop chunks if explicitly aborted OR stream has already completed
+            // This prevents dropping chunks that arrive during the brief window between [DONE] and finalize()
+            if (signal?.aborted) {
+              console.log(`[streamFromOpenAI] Dropping chunk because signal was aborted`);
+              return;
+            }
+            
+            if (streamCompleted) {
+              console.log(`[streamFromOpenAI] Dropping late chunk - stream already completed`);
+              return;
+            }
+
+            console.log(`[streamFromOpenAI] Received chunk, length=${chunk.length}, assistantText now ${assistantText.length} chars`);
+            
+            // Debug: Log first few chunks to verify content
+            if (chunksSentToWebview <= 3) {
+              console.log(`[streamFromOpenAI] First chunk #${chunksSentToWebview}: "${chunk.substring(0, 100)}"`);
+            }
 
             assistantText += chunk;
             
+            chunksSentToWebview++;
+            console.log(`[streamFromOpenAI] Sending streamChunk to webview (chunk #${chunksSentToWebview}), length=${chunk.length}`);
             // IMPORTANT: Send raw chunk WITHOUT stripping thinking/tool tags
             // The webview will handle tag detection and bubble creation
-            panel.webview.postMessage({ type: 'streamChunk', message: chunk });
+            try {
+              const msg = { type: 'streamChunk', message: chunk };
+              panel.webview.postMessage(msg);
+              console.log(`[streamFromOpenAI] postMessage sent successfully for chunk #${chunksSentToWebview}`);
+            } catch (err) {
+              console.error(`[streamFromOpenAI] postMessage failed:`, err);
+              
+              // CRITICAL: If postMessage fails, don't count this as a successful chunk
+              chunksSentToWebview--;
+            }
 
             // NEW: Send real-time token count during streaming
             if (onToken) onToken(chunk);

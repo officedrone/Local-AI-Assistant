@@ -2,6 +2,7 @@
 
 const contextList = document.getElementById('contextFileList'); // container in your HTML
 let currentFiles = [];
+let scopeCount = 0;
 
 function calculateMasterState(files) {
   if (!files || files.length === 0) return 'smart';
@@ -19,11 +20,11 @@ function updateMasterToggleDisplay(state) {
   if (!btn) return;
   
   if (state === 'smart') {
-    btn.textContent = 'Smart Slicing ↻';
+    btn.textContent = 'Smart Slices ↻';
   } else if (state === 'full') {
     btn.textContent = 'Full Files ↻';
   } else { // mixed - just show smart as default clickable option
-    btn.textContent = 'Mixed (click to reset) ↻';
+    btn.textContent = 'Mixed Mode ↻';
   }
 }
 
@@ -111,17 +112,12 @@ export function setupContextControls(vscode) {
   setupOutsideClickHandler();
 }
 
-// Update the token count text under the header
-export function updateContextTokens(tokens, contextSize) {
-  const span = document.getElementById('contextTokenCount');
-  if (!span) return;
-  const includeCtx = document.getElementById('includeCtxStatus')?.textContent === 'true';
-  if (!includeCtx) {
-    span.textContent = '(0 tokens)';
-    span.style.color = '';
-  } else {
-    span.textContent = `(${tokens} tokens)`;
-    span.style.color = tokens > contextSize ? 'red' : '';
+// Update scope file count in header
+export function updateScopeCount(count) {
+  scopeCount = count;
+  const scopeCountSpan = document.getElementById('scopeFileCount');
+  if (scopeCountSpan) {
+    scopeCountSpan.textContent = count.toString();
   }
 }
 
@@ -140,13 +136,9 @@ export function updateContextFileList(vscode, files) {
   if (!contextList) return;
 
   const contextSize = Number(document.body.dataset.contextSize || '4096');
-  
-  // Update the main dropdown token count in the summary
-  const totalTokens = files ? files.reduce((sum, f) => sum + f.tokens, 0) : 0;
-  const tokenCountSpan = document.getElementById('contextSummaryTokenCount');
-  if (tokenCountSpan) {
-    tokenCountSpan.textContent = totalTokens.toString();
-  }
+
+  // Update scope count display in header
+  updateScopeCount(scopeCount);
 
   const prevDetails = contextList.querySelector('details.context-files-dropdown');
   const wasOpen = prevDetails?.open ?? false;
@@ -154,7 +146,7 @@ export function updateContextFileList(vscode, files) {
   contextList.innerHTML = '';
 
   if (!files || files.length === 0) {
-    contextList.innerHTML = '<em>No files in context</em>';
+    contextList.innerHTML = '<em>No files in scope</em>';
     return;
   }
 
@@ -184,8 +176,8 @@ export function updateContextFileList(vscode, files) {
     const modeToggle = document.createElement('button');
     modeToggle.className = 'file-mode-cycle-btn';
     const isFull = f.sendFullFile ?? false;
-    modeToggle.textContent = `${isFull ? 'Full Files' : 'Smart Slicing'} ↻`;
-    modeToggle.title = 'Click to cycle context mode (Smart Slicing ↔ Full Files)';
+    modeToggle.textContent = `${isFull ? 'Full File' : 'Smart Slice'} ↻`;
+    modeToggle.title = `Click to toggle fetch mode: ${isFull ? 'Request specific line ranges (Smart Slice)' : 'Request full file content'}`;
     
     modeToggle.addEventListener('click', (e) => {
       e.stopPropagation();

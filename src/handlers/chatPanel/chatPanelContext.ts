@@ -3,7 +3,7 @@
 import * as vscode from 'vscode';
 import { getActiveChatPanel } from './chatPanel';
 import { postFileContextTokens } from './chatPanelTokens';
-import { countTextTokens } from '../../commands/tokenActions';
+import { countTextTokens, addToScopeTokens, getSpentFileContextTokens } from '../../commands/tokenActions';
 
 export interface FileContext {
   uri: vscode.Uri;
@@ -14,12 +14,21 @@ export interface FileContext {
   sendFullFile?: boolean;
 }
 
+export interface ScopeFile {
+  uri: string;
+  language: string;
+  tokens: number;
+}
+
 interface SessionContextState {
   uris: string[];
   fileModes: Map<string, boolean>;
 }
  
-let contextFiles: FileContext[] = [];
+let contextFiles: FileContext[] = []; // Deprecated - kept for backward compat
+let scopeFiles: Set<string> = new Set(); // All workspace files available to LLM (URIs only)
+let scopeFileMetadata = new Map<string, ScopeFile>(); // Cache for scope file metadata
+let fetchedFiles: FileContext[] = []; // Files whose content has been sent to LLM via tools
 let sessionContextState: SessionContextState | null = null;
 
 /**
@@ -37,40 +46,211 @@ export function getCodeEditor(): vscode.TextEditor | undefined {
 
 /**
  * Get the current list of files in context.
+ * @deprecated Use getScopeFiles() or getFetchedFiles() instead
  */
 export function getContextFiles(): FileContext[] {
   return contextFiles;
 }
 
 /**
+ * Get all scope files with their metadata (URI, language, tokens).
+ */
+export function getScopeFiles(): ScopeFile[] {
+  return Array.from(scopeFiles).map(uri => 
+    scopeFileMetadata.get(uri) || { uri, language: 'unknown', tokens: 0 }
+  );
+}
+
+/**
+ * Get only the URIs of scope files (for scopeUris field in prompts).
+ */
+export function getScopeFileURIs(): string[] {
+  return Array.from(scopeFiles);
+}
+
+/**
+ * Get total token count of all files in workspace scope.
+ */
+export function getScopeTokenCount(): number {
+  return getScopeFiles().reduce((sum, f) => sum + f.tokens, 0);
+}
+
+/**
+ * Add a file URI to the workspace scope with metadata (makes it available for search/request).
+ * Calculates token count by reading the file.
+ */
+export async function addFileToScope(uri: vscode.Uri): Promise<void> {
+  const uriStr = uri.toString();
+  
+  // Deduplicate - skip if already in scope
+  if (scopeFiles.has(uriStr)) return;
+  
+  try {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const language = doc.languageId;
+    const tokens = countTextTokens(doc.getText());
+    
+    scopeFiles.add(uriStr);
+    scopeFileMetadata.set(uriStr, { uri: uriStr, language, tokens });
+    addToScopeTokens(tokens);
+  } catch (err) {
+    console.warn(`Failed to add file to scope ${uriStr}:`, err);
+  }
+}
+
+/**
+ * Add a file to scope with pre-calculated metadata (for performance).
+ */
+export function addToScopeWithMetadata(uri: string, language: string, tokens: number): void {
+  if (!scopeFiles.has(uri)) {
+    scopeFiles.add(uri);
+    scopeFileMetadata.set(uri, { uri, language, tokens });
+    addToScopeTokens(tokens);
+  }
+}
+
+/**
+ * Remove a file URI from the workspace scope.
+ */
+export function removeFileFromScope(uri: vscode.Uri): void {
+  const uriStr = uri.toString();
+  if (scopeFiles.has(uriStr)) {
+    const metadata = scopeFileMetadata.get(uriStr);
+    if (metadata) {
+      addToScopeTokens(-metadata.tokens); // Remove from token count
+    }
+    scopeFiles.delete(uriStr);
+    scopeFileMetadata.delete(uriStr);
+  }
+}
+
+/**
+ * Clear all files from workspace scope.
+ */
+export function clearScopeFiles(): void {
+  scopeFiles.clear();
+  scopeFileMetadata.clear();
+}
+
+/**
+ * Add all workspace files to scope by scanning the current workspace folder(s).
+ * Calculates token count for each file.
+ */
+export async function addWorkspaceFilesToScope(excludedPatterns: string[] = []): Promise<number> {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    return 0;
+  }
+
+  let addedCount = 0;
+  
+  // Build a glob pattern that excludes common non-code directories
+  const excludePattern = excludedPatterns.length > 0 
+    ? `{${excludedPatterns.join(',')}}`
+    : '{node_modules,.git,*.min.js,dist,build,out}';
+
+  for (const folder of workspaceFolders) {
+    try {
+      const files = await vscode.workspace.findFiles(
+        '**/*', // Include all files
+        excludePattern,
+        1000 // Limit to 1000 files per folder to avoid performance issues
+      );
+
+      for (const uri of files) {
+        const uriStr = uri.toString();
+        if (!scopeFiles.has(uriStr)) {
+          try {
+            const doc = await vscode.workspace.openTextDocument(uri);
+            const language = doc.languageId;
+            const tokens = countTextTokens(doc.getText());
+            
+            scopeFiles.add(uriStr);
+            scopeFileMetadata.set(uriStr, { uri: uriStr, language, tokens });
+            addToScopeTokens(tokens);
+            addedCount++;
+          } catch (err) {
+            console.warn(`Failed to read file ${uriStr}:`, err);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to scan workspace folder ${folder.name}:`, err);
+    }
+  }
+
+  notifyContextUpdated();
+  return addedCount;
+}
+
+/**
  * Add a file to the context by URI.
+ * @deprecated Use addFileToScope() for scope files or fetchFileContent() for fetched content
  */
 export async function addFileToContext(uri: vscode.Uri, forceReload: boolean = false, suppressNotification: boolean = false): Promise<void> {
+  // For backward compatibility - redirect to scope
+  await addFileToScope(uri);
+}
+
+/**
+ * Add a file to fetched files (content sent to LLM via tools).
+ * Deduplicates - won't add if already fetched.
+ */
+export function addFetchedFile(file: FileContext): void {
+  // Deduplicate - if already fetched, don't add again
+  const existing = fetchedFiles.find(f => f.uri.toString() === file.uri.toString());
+  if (existing) return;
+  
+  fetchedFiles.push(file);
+}
+
+/**
+ * Get all files whose content has been sent to LLM via tools.
+ */
+export function getFetchedFiles(): FileContext[] {
+  return fetchedFiles;
+}
+
+/**
+ * Clear all fetched files (called on new session).
+ */
+export function clearFetchedFiles(): void {
+  fetchedFiles = [];
+}
+
+/**
+ * Fetch file content from disk and add to fetched files.
+ * @param uri File URI to fetch
+ * @param startLine Optional start line for smart slicing (1-based)
+ * @param endLine Optional end line for smart slicing (inclusive, 1-based)
+ * @returns The fetched FileContext
+ */
+export async function fetchFileContent(
+  uri: vscode.Uri, 
+  startLine?: number, 
+  endLine?: number
+): Promise<FileContext> {
   const doc = await vscode.workspace.openTextDocument(uri);
-
-  // Only check for duplicates if not forcing reload
-  if (!forceReload && contextFiles.find(f => f.uri.toString() === uri.toString())) {
-    return;
-  }
-
-  // Remove existing file if forceReload is true (to ensure fresh content)
-  if (forceReload) {
-    contextFiles = contextFiles.filter(f => f.uri.toString() !== uri.toString());
-  }
   const text = doc.getText();
-  const lines = text.split(/\r?\n/).map((t, i) => ({ n: i + 1, text: t }));
-
-  contextFiles.push({
+  let lines = text.split(/\r?\n/).map((t, i) => ({ n: i + 1, text: t }));
+  
+  // Apply smart slicing if range specified
+  if (startLine !== undefined && endLine !== undefined) {
+    const startIdx = Math.max(0, startLine - 1);
+    const endIdx = Math.min(lines.length, endLine);
+    lines = lines.slice(startIdx, endIdx);
+  }
+  
+  const file: FileContext = {
     uri,
     language: doc.languageId,
     lines,
-    summary: await generateFileSummary(text, doc.languageId),
-    tokens: countTextTokens(text)
-  });
+    summary: `Fetched content from ${uri.toString()}`,
+    tokens: countTextTokens(lines.map(l => l.text).join('\n'))
+  };
   
-  if (!suppressNotification) {
-    notifyContextUpdated();
-  }
+  addFetchedFile(file);
+  return file;
 }
 
 /**
@@ -83,44 +263,40 @@ export function removeFileFromContext(uri: vscode.Uri): void {
 
 /**
  * Save current session state for restoration in new sessions.
+ * Saves ONLY scope URIs (not content), not fetched files.
  */
 export function saveSessionContextState(): SessionContextState {
-  const uris = contextFiles.map(f => f.uri.toString());
+  const uris = Array.from(scopeFiles); // Save scope URIs only
   const fileModes = new Map<string, boolean>();
-  contextFiles.forEach(f => {
-    if (f.sendFullFile !== undefined) {
-      fileModes.set(f.uri.toString(), f.sendFullFile);
-    }
-  });
   
+  // Note: We could track per-file fetch modes here if needed in future
   sessionContextState = { uris, fileModes };
   return sessionContextState;
 }
 
 /**
- * Restore context files from saved state with their modes preserved.
+ * Restore scope files from saved state.
+ * Does NOT restore fetched files (they may be stale).
  */
 export async function restoreSessionContextState(): Promise<void> {
   if (!sessionContextState) {
     return;
   }
   
-  // Add all files without triggering notifications during batch operation
+  // Clear any existing fetched files first
+  clearFetchedFiles();
+  
+  // Add all scope URIs without triggering notifications during batch operation
   for (const uriStr of sessionContextState.uris) {
     const uri = vscode.Uri.parse(uriStr);
     try {
-      await addFileToContext(uri, true, true);
-      
-      const file = contextFiles.find(f => f.uri.toString() === uriStr);
-      if (file && sessionContextState.fileModes.has(uriStr)) {
-        file.sendFullFile = sessionContextState.fileModes.get(uriStr);
-      }
+      await addFileToScope(uri);
     } catch (err) {
       console.warn(`Failed to restore file ${uriStr}:`, err);
     }
   }
   
-  // Send single consolidated notification after all files are restored with modes
+  // Send single consolidated notification after all files are restored
   notifyContextUpdated();
 }
 
@@ -131,14 +307,16 @@ function notifyContextUpdated() {
   const panel = getActiveChatPanel();
   if (!panel) return;
   
+  // Send scope files for UI display (not fetched content)
   panel.webview.postMessage({
     type: 'contextUpdated',
-    files: getContextFiles().map(f => ({
-      uri: f.uri.toString(),
+    files: getScopeFiles().map(f => ({
+      uri: f.uri,
       language: f.language,
       tokens: f.tokens,
-      sendFullFile: f.sendFullFile ?? false
-    }))
+      sendFullFile: false // Default mode for scope files
+    })),
+    scopeCount: getScopeFiles().length
   });
   postFileContextTokens(panel);
 }
@@ -152,10 +330,9 @@ export function clearContextFiles(): void {
 }
 
 /**
- * Add all currently opened editor tabs (visible and background) to context.
- * Supports forceReload to ensure fresh content is always loaded.
+ * Add all currently opened editor tabs (visible and background) to scope.
  */
-export async function addAllOpenEditorsToContext(forceReload: boolean = false) {
+export async function addAllOpenEditorsToScope() {
   // 1) Collect all tabs across all groups
   const tabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
 
@@ -181,9 +358,9 @@ export async function addAllOpenEditorsToContext(forceReload: boolean = false) {
            uri.scheme !== 'vscode';
   });
 
-  // 4) Add to context array (delegating to addFileToContext with forceReload)
+  // 4) Add to scope
   for (const uri of filtered) {
-    await addFileToContext(uri, forceReload);
+    await addFileToScope(uri);
   }
 
   // 5) Notify UI and token stats once

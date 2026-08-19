@@ -1,6 +1,10 @@
 // src/static/chatPanelView.ts
 import * as vscode from 'vscode';
-import { getSessionTokenCount, getSpentFileContextTokens } from '../commands/tokenActions';
+import { 
+  getSessionTokenCount, 
+  getSpentFileContextTokens,
+  getToolsTokenCount
+} from '../commands/tokenActions';
 
 const CONFIG_SECTION = 'localAIAssistant';
 
@@ -76,13 +80,13 @@ export function getWebviewContent(
           Chat/Think: <span id="sessionTokenCount">${getSessionTokenCount()}</span>
         </div>
         <div class="tokenItem">
+          Tools: <span id="toolsTokenCount">${getToolsTokenCount()}</span>
+        </div>
+        <div class="tokenItem">
           Files: <span id="fileTokenCount">${getSpentFileContextTokens()}</span>
         </div>
         <div class="tokenItem">
-          Total:
-          <span id="totalTokenCount">
-            ${getSessionTokenCount() + getSpentFileContextTokens()}
-          </span>
+          Total: <span id="totalTokenCount">${getSessionTokenCount() + getToolsTokenCount() + getSpentFileContextTokens()}</span>
           <span id="maxTokenLabel">
             Context size:
             <span id="contextSizeBox" title="Click to edit max tokens">${contextSize}</span>
@@ -104,24 +108,22 @@ export function getWebviewContent(
 
   <!--Multi-file context controls -->
   <details class="context-section-dropdown" open>
-    <summary>
-      Context (<span id="contextSummaryTokenCount">0</span>&nbsp;tokens)
-    </summary>
+    <summary>&nbsp;&nbsp;Context scope:&nbsp;<span id="scopeFileCount">0</span>&nbsp;files&nbsp;(<span id="scopeTokenCount">0</span>&nbsp;tokens)&nbsp;|&nbsp;Sent to LLM:&nbsp;<span id="sentTokenCount">0</span>&nbsp;tokens&nbsp;&nbsp;</summary>
       <div id="contextControls">
         <div class="context-buttons">
-          <button id="addCurrentBtn" title="Add the active editor">📄 Add Current</button>
-          <button id="addFileBtn" title="Add a file from disk">➕ Add File</button>
-          <button id="addEditorsBtn" title="Add all opened editors">📂 Add Editors</button>
-          <button id="clearContextBtn" title="Clear context files">🗑️ Clear</button>
+          <button id="addCurrentBtn" title="Add the active editor to scope">📄 Add Current</button>
+          <button id="addFileBtn" title="Add a file from disk to scope">➕ Add File</button>
+          <button id="addEditorsBtn" title="Add all opened editors to scope">📂 Add Editors</button>
+          <button id="clearContextBtn" title="Clear scope files">🗑️ Clear</button>
         </div>
 
         <div id="contextFileList" class="context-file-list">
-          <em>No files in context</em>
+          <em>No files in scope</em>
         </div>
 
         <div class="context-mode-row">
-          <span class="mode-label">Context Mode:</span>
-          <button id="masterModeToggle" class="file-mode-cycle-btn master-mode-toggle" title="Click to toggle between Smart Slicing and Full Files for all files">Smart Slicing ↻</button>
+          <span class="mode-label">Fetch Mode:</span>
+          <button id="masterModeToggle" class="file-mode-cycle-btn master-mode-toggle" title="Click to toggle default fetch mode for requestFileContent: Smart Slice (specific line ranges) or Full File (entire file content)">Smart Slices ↻</button>
         </div>
       </div>
   </details>
@@ -132,6 +134,14 @@ export function getWebviewContent(
     <label>
       <input type="checkbox" id="allowFileEditsToggle" title="Allow LLM to edit files in the workspace via a tool call"/>
       editFiles (Experimental)
+    </label>
+    <label>
+      <input type="checkbox" id="requestFileContentToggle" title="Allow LLM to request specific line ranges from context files"/>
+      requestFileContent
+    </label>
+    <label>
+      <input type="checkbox" id="searchInFileToggle" title="Allow LLM to search for content within workspace files"/>
+      searchInFile
     </label>
 
   </details>

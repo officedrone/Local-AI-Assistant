@@ -14,9 +14,15 @@ export async function handleToggleCapability(
   panel: WebviewPanel
 ) {
   if (!evt || typeof evt.key !== 'string') return;
+  
+  // Map capability keys to setting names
+  const settingKey = evt.key === 'editFile' ? 'allowFileEdits' : 
+                     evt.key === 'requestFileContent' ? 'requestFileContent' : 
+                     evt.key === 'searchInFile' ? 'searchInFile' : evt.key;
+                     
   await vscode.workspace
     .getConfiguration('localAIAssistant.capabilities')
-    .update(evt.key, evt.value, vscode.ConfigurationTarget.Global);
+    .update(settingKey, evt.value, vscode.ConfigurationTarget.Global);
 
   // Re‑send capabilities so webview + LLM know current state
   sendCapabilities(panel);
@@ -30,10 +36,22 @@ export function sendCapabilities(panel: WebviewPanel) {
     .getConfiguration('localAIAssistant.capabilities')
     .get<boolean>('allowFileEdits', false);
 
+  const requestFileContentEnabled = vscode.workspace
+    .getConfiguration('localAIAssistant.capabilities')
+    .get<boolean>('requestFileContent', true);
+    
+  const searchInFileEnabled = vscode.workspace
+    .getConfiguration('localAIAssistant.capabilities')
+    .get<boolean>('searchInFile', true);
+
   panel.webview.postMessage({
     type: 'capabilities',
-    allowFileEdits
+    allowFileEdits,
+    requestFileContent: requestFileContentEnabled,
+    searchInFile: searchInFileEnabled
   });
+  
+  // Also update extension-side state for prompt building
 }
 
 /**
@@ -43,4 +61,26 @@ export function canEditFiles(): boolean {
   return vscode.workspace
     .getConfiguration('localAIAssistant.capabilities')
     .get<boolean>('allowFileEdits', false);
+}
+
+/**
+ * Check if file content requests are enabled
+ */
+export function canRequestFileContent(): boolean {
+  const requestFileContentEnabled = vscode.workspace
+    .getConfiguration('localAIAssistant.capabilities')
+    .get<boolean>('requestFileContent', true);
+  
+  return requestFileContentEnabled;
+}
+
+/**
+ * Check if file search is enabled
+ */
+export function canSearchInFile(): boolean {
+  const searchInFileEnabled = vscode.workspace
+    .getConfiguration('localAIAssistant.capabilities')
+    .get<boolean>('searchInFile', true);
+  
+  return searchInFileEnabled;
 }

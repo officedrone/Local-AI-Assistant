@@ -3,32 +3,6 @@ import * as vscode from 'vscode';
 import { getConfig, getMaxContextTokens, updateApiStatus } from './chatPanelConfig';
 import { postFileContextTokens, refreshTokenStats } from './chatPanelTokens';
 import {
-  getCodeEditor,
-  addFileToContext,
-  removeFileFromContext,
-  addAllOpenEditorsToContext,
-  clearContextFiles,
-  getContextFiles,
-  extractRelevantSlices,
-  saveSessionContextState,
-  restoreSessionContextState
-} from './chatPanelContext';
-
-
-//Agent imports
-import { handleEditMessage, handleRequestPreview } from '../agent/agentToolsVSFiles';
-import { handleToggleCapability, sendCapabilities, canEditFiles } from '../agent/agentToolsCapabilityMgr';
-import { dispatchToolCall } from '../agent/agentToolsIndex';
-
-
-import { chatPrompt } from '../../static/prompts';
-
-
-
-
-
-//Token Count imports
-import {
   countMessageTokens,
   countTextTokens,
   getFileContextTokens,
@@ -36,9 +10,54 @@ import {
   resetSessionTokenCount,
   getEffectiveFileContextTokens,
   markFileTokensSpent,
+  addToolTokens,
   setStreamingActive,
   isStreamingActive
 } from '../../commands/tokenActions';
+import {
+  getCodeEditor,
+  addFileToScope,
+  getScopeFiles,
+  getScopeFileURIs,
+  getFetchedFiles,
+  clearFetchedFiles,
+  removeFileFromContext,
+  saveSessionContextState,
+  restoreSessionContextState,
+  addWorkspaceFilesToScope,
+  addToScopeWithMetadata,
+  removeFileFromScope,
+  addFetchedFile as internalAddFetchedFile,
+  clearScopeFiles
+} from './chatPanelContext';
+
+// Session scope state variable (tracks per-file fetch modes and global mode)
+let sessionScopeState: { uris: string[]; fileModes: Map<string, boolean>; globalFetchMode?: boolean } | null = null;
+
+/**
+ * sessionScopeState.fileModes maps URI -> sendFullFile flag
+ * - true (Full File): LLM will request entire file content via requestFileContent tool
+ * - false (Smart Slice): LLM will request specific line ranges via requestFileContent tool  
+ * This controls how the LLM fetches files, NOT what gets added to scope.
+ * Scope = workspace availability for tools; Fetched = actual content sent to LLM.
+ */
+
+// FileContext interface for fetched files
+interface FileContext {
+  uri: vscode.Uri;
+  language: string;
+  lines: { n: number; text: string }[];
+  summary: string;
+  tokens: number;
+  sendFullFile?: boolean;
+}
+
+//Agent imports
+import { handleEditMessage, handleRequestPreview } from '../agent/agentToolsVSFiles';
+import { handleToggleCapability, sendCapabilities, canEditFiles, canRequestFileContent, canSearchInFile } from '../agent/agentToolsCapabilityMgr';
+import { dispatchToolCall, searchWorkspaceFiles } from '../agent/agentToolsIndex';
+
+import { chatPrompt } from '../../static/prompts';
 
 //Context imports
 import { shouldIncludeContext, markContextDirty } from '../contextHandler';
@@ -58,44 +77,16 @@ let lastFileContextTokens = 0;
 
 // Multi-file context vars
 let lastContextState: { uri: string; tokens: number }[] = [];
-let pendingFileTokens: number | null = null;
-let pendingFileUris: string[] = [];
-let seenFiles = new Set<string>();
-let spentFiles = new Set<string>(); // URIs whose tokens have already been spent in this session
 
-// Multi-file context function to keep track of context
-function updatePendingFileTokens() {
-  const current = getContextFiles().map(f => ({
-    uri: f.uri.toString(),
-    tokens: f.tokens,
-  }));
-
-  // Files newly present compared to lastContextState and not already spent this session
-  const newFiles = current.filter(
-    c =>
-      !lastContextState.some(prev => prev.uri === c.uri) &&
-      !seenFiles.has(c.uri) &&
-      !spentFiles.has(c.uri)
-  );
-
-  const newTokens = newFiles.reduce((sum, f) => sum + f.tokens, 0);
-
-  // *** Accumulate instead of overwrite ***
-  if (newTokens > 0) {
-    pendingFileTokens = (pendingFileTokens ?? 0) + newTokens;
-    pendingFileUris.push(...newFiles.map(f => f.uri));
-  } else {
-    pendingFileTokens = null;      // nothing new
-    pendingFileUris = [];
-  }
-
-  // Mark these files as "seen"
-  newFiles.forEach(f => seenFiles.add(f.uri));
-
-  lastContextState = current;
+interface ToolFailure {
+  toolType: string;
+  error: string;
+  timestamp: number;
+  payload?: any;
 }
 
-
+let consecutiveToolFailures: ToolFailure[] = [];
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () => void) {
   panel.webview.onDidReceiveMessage(async (evt) => {
@@ -103,114 +94,133 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
     switch (evt.type) {
 
-      // Multi-file context cases
-      case 'addFileToContext': {
+      // Multi-file scope cases - files added here are URIs only, no content sent
+      case 'addFileToScope': {
         if (evt.uri) {
-          await addFileToContext(vscode.Uri.parse(evt.uri));
+          await addFileToScope(vscode.Uri.parse(evt.uri));
           
-          const files = getContextFiles();
-          const fullCount = files.filter(f => f.sendFullFile === true).length;
-          const smartCount = files.length - fullCount;
-          const defaultMode = smartCount >= fullCount ? false : true;
+          lastContextState = getScopeFiles().map(f => ({ uri: f.uri, tokens: f.tokens }));
+
+          // Update UI with scope files
+          const filesForUI = getScopeFiles().map(f => ({
+            uri: f.uri,
+            language: f.language,
+            tokens: f.tokens,
+            sendFullFile: false
+          }));
           
-          files.forEach(f => {
-            if (f.sendFullFile === undefined) {
-              f.sendFullFile = defaultMode;
-            }
+          panel.webview.postMessage({ 
+            type: 'contextUpdated', 
+            files: filesForUI,
+            scopeCount: getScopeFiles().length
           });
           
-          updatePendingFileTokens();
+          postFileContextTokens(panel);
         }
         break;
       }
 
       case 'addCurrent': {
-      // Ensure an editor is focused so activeTextEditor is set
-      await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+        // Ensure an editor is focused so activeTextEditor is set
+        await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
 
-      const ed = vscode.window.activeTextEditor;
-      if (ed) {
-        await addFileToContext(ed.document.uri);
-        
-        const files = getContextFiles();
-        const fullCount = files.filter(f => f.sendFullFile === true).length;
-        const smartCount = files.length - fullCount;
-        const defaultMode = smartCount >= fullCount ? false : true;
-        
-        const addedFile = files[files.length - 1];
-        if (addedFile && addedFile.sendFullFile === undefined) {
-          addedFile.sendFullFile = defaultMode;
+        const ed = vscode.window.activeTextEditor;
+        if (ed) {
+          await addFileToScope(ed.document.uri);
+          
+          lastContextState = getScopeFiles().map(f => ({ uri: f.uri, tokens: f.tokens }));
+
+          // Update UI immediately with scope files
+          const filesForUI = getScopeFiles().map(f => ({
+            uri: f.uri,
+            language: f.language,
+            tokens: f.tokens,
+            sendFullFile: false // Default mode for scope files
+          }));
+          panel.webview.postMessage({ 
+            type: 'contextUpdated', 
+            files: filesForUI,
+            scopeCount: getScopeFiles().length
+          });
+          
+          postFileContextTokens(panel);
+        } else {
+          vscode.window.showWarningMessage('No active editor to add.');
         }
-        
-        updatePendingFileTokens();
-        lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
-
-        // Update UI immediately
-        const filesForUI = getContextFiles().map(f => ({
-          uri: f.uri.toString(),
-          language: f.language,
-          tokens: f.tokens
-        }));
-        panel.webview.postMessage({ type: 'contextUpdated', files: filesForUI });
-      } else {
-        vscode.window.showWarningMessage('No active editor to add.');
+        break;
       }
-      break;
-    }
 
       case 'addEditors': {
-        await addAllOpenEditorsToContext();
+        const tabs = vscode.window.tabGroups.all.flatMap(g => g.tabs);
+        const uris: vscode.Uri[] = [];
         
-        const files = getContextFiles();
-        const fullCount = files.filter(f => f.sendFullFile === true).length;
-        const smartCount = files.length - fullCount;
-        const defaultMode = smartCount >= fullCount ? false : true;
-        
-        files.forEach(f => {
-          if (f.sendFullFile === undefined) {
-            f.sendFullFile = defaultMode;
+        for (const tab of tabs) {
+          const input = tab.input;
+          if (input instanceof vscode.TabInputText) {
+            uris.push(input.uri);
+          } else if (input instanceof vscode.TabInputTextDiff) {
+            uris.push(input.modified);
           }
-        });
+        }
         
-        updatePendingFileTokens();
-        lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+        const seen = new Set<string>();
+        for (const uri of uris.filter(u => u.scheme !== 'vscode-webview' && 
+                                          u.scheme !== 'output' && 
+                                          u.scheme !== 'vscode')) {
+          if (!seen.has(uri.toString())) {
+            seen.add(uri.toString());
+            await addFileToScope(uri);
+          }
+        }
+        
+        lastContextState = getScopeFiles().map(f => ({ uri: f.uri, tokens: f.tokens }));
 
-        // Update UI immediately
-        const filesForUI = getContextFiles().map(f => ({
-          uri: f.uri.toString(),
-          language: f.language,
-          tokens: f.tokens,
-          sendFullFile: f.sendFullFile ?? false
-        }));
-        panel.webview.postMessage({ type: 'contextUpdated', files: filesForUI });
+          // Update UI immediately with scope files
+          const filesForUI = getScopeFiles().map(f => ({
+            uri: f.uri,
+            language: f.language,
+            tokens: f.tokens,
+            sendFullFile: false
+          }));
+          panel.webview.postMessage({ 
+            type: 'contextUpdated', 
+            files: filesForUI,
+            scopeCount: getScopeFiles().length
+          });
+          
+          postFileContextTokens(panel);
         break;
       }
 
 
       case 'pickAndAddFile': {
-        // 1) showOpenDialog in extension land
         const uris = await vscode.window.showOpenDialog({
           canSelectMany: true,
-          openLabel: 'Add to Context'
+          openLabel: 'Add to Scope' // Changed label for clarity
         });
-        // 2) push each picked file into your shared helper
+        
         if (uris) {
           for (const uri of uris) {
-            await addFileToContext(uri);
+            await addFileToScope(uri);
           }
           
-          const files = getContextFiles();
-          const fullCount = files.filter(f => f.sendFullFile === true).length;
-          const smartCount = files.length - fullCount;
-          const defaultMode = smartCount >= fullCount ? false : true;
+          lastContextState = getScopeFiles().map(f => ({ uri: f.uri, tokens: f.tokens }));
+
+          // Update UI with scope files
+          const filesForUI = getScopeFiles().map(f => ({
+            uri: f.uri,
+            language: f.language,
+            tokens: f.tokens,
+            sendFullFile: false
+          }));
           
-          files.forEach(f => {
-            if (f.sendFullFile === undefined) {
-              f.sendFullFile = defaultMode;
-            }
+          panel.webview.postMessage({ 
+            type: 'contextUpdated', 
+            files: filesForUI,
+            scopeCount: getScopeFiles().length
           });
           
-          updatePendingFileTokens();
+          postFileContextTokens(panel);
         }
         break;
       }
@@ -218,46 +228,86 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       case 'removeFileFromContext': {
         if (evt.uri) {
           const uri = vscode.Uri.parse(evt.uri);
-          removeFileFromContext(uri);
-          updatePendingFileTokens();
-
-          // Forget only "seen" state so diffs remain accurate; do NOT clear spentFiles
-          seenFiles.delete(uri.toString());
-          lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+          
+          // Remove from scope and clear metadata
+          removeFileFromScope(uri);
+          
+          // Clear file mode from session state
+          if (sessionScopeState) {
+            sessionScopeState.fileModes.delete(uri.toString());
+          }
+          
+          lastContextState = getScopeFiles().map(f => ({ uri: f.uri, tokens: f.tokens }));
+          
+          // Notify UI of updated scope
+          const filesForUI = getScopeFiles().map(f => ({
+            uri: f.uri,
+            language: f.language,
+            tokens: f.tokens,
+            sendFullFile: sessionScopeState?.fileModes.get(f.uri) ?? false
+          }));
+          
+          panel.webview.postMessage({ 
+            type: 'contextUpdated', 
+            files: filesForUI,
+            scopeCount: getScopeFiles().length
+          });
+          
+          postFileContextTokens(panel);
         }
         break;
       }
 
 
       case 'clearContext': {
-        clearContextFiles();
-        updatePendingFileTokens();
+        clearScopeFiles();
+        
+        // Clear all file modes from session state
+        if (sessionScopeState) {
+          sessionScopeState.fileModes.clear();
+        }
+        
+        lastContextState = [];
+        
+        // Notify UI of cleared scope
+        panel.webview.postMessage({ 
+          type: 'contextUpdated', 
+          files: [],
+          scopeCount: 0
+        });
+        
+        postFileContextTokens(panel);
         break;
       }
 
       case 'toggleFileMode': {
+        // Per-file mode toggle - stored for future fetch operations
         if (evt.uri) {
           const uri = vscode.Uri.parse(evt.uri);
-          const file = getContextFiles().find(f => f.uri.toString() === uri.toString());
           
-          if (file) {
-            file.sendFullFile = evt.sendFullFile ?? false;
-            
-            lastContextState = getContextFiles().map(f => ({ 
-              uri: f.uri.toString(), 
-              tokens: f.tokens 
-            }));
-            
-            panel.webview.postMessage({
-              type: 'contextUpdated',
-              files: getContextFiles().map(f => ({
-                uri: f.uri.toString(),
-                language: f.language,
-                tokens: f.tokens,
-                sendFullFile: f.sendFullFile ?? false
-              }))
-            });
+          // Store mode in session state for later use
+          if (!sessionScopeState) {
+            sessionScopeState = { uris: [], fileModes: new Map() };
           }
+          sessionScopeState.fileModes.set(uri.toString(), evt.sendFullFile ?? false);
+            
+          lastContextState = getScopeFiles().map(f => ({ 
+            uri: f.uri, 
+            tokens: f.tokens 
+          }));
+            
+        panel.webview.postMessage({
+          type: 'contextUpdated',
+          files: getScopeFiles().map(f => ({
+            uri: f.uri,
+            language: f.language,
+            tokens: f.tokens,
+            sendFullFile: evt.sendFullFile ?? false
+          })),
+          scopeCount: getScopeFiles().length
+        });
+        
+        postFileContextTokens(panel);
         }
         break;
       }
@@ -265,24 +315,29 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
       case 'setAllMode': {
         const newMode = evt.mode === 'full';
         
-        getContextFiles().forEach(f => {
-          f.sendFullFile = newMode;
-        });
+        // Store the global mode in session state for future fetch operations
+        if (!sessionScopeState) {
+          sessionScopeState = { uris: [], fileModes: new Map() };
+        }
+        (sessionScopeState as any).globalFetchMode = newMode;
         
-        lastContextState = getContextFiles().map(f => ({ 
-          uri: f.uri.toString(), 
+        lastContextState = getScopeFiles().map(f => ({ 
+          uri: f.uri, 
           tokens: f.tokens 
         }));
         
         panel.webview.postMessage({
           type: 'contextUpdated',
-          files: getContextFiles().map(f => ({
-            uri: f.uri.toString(),
+          files: getScopeFiles().map(f => ({
+            uri: f.uri,
             language: f.language,
             tokens: f.tokens,
-            sendFullFile: f.sendFullFile ?? false
-          }))
+            sendFullFile: newMode
+          })),
+          scopeCount: getScopeFiles().length
         });
+        
+        postFileContextTokens(panel);
         
         break;
       }
@@ -324,31 +379,33 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
           }
         }
 
-        // Regular sendToAI flow for chat/validation/completion
+        // Regular sendToAI flow for chat/validation/completion/tool results
         await handleSendToAI(
           panel,
           evt.message,
-          evt.mode,
+          evt.mode || 'chat',
           undefined,        // always use extension-side context
-          evt.language
+          evt.language,
+          (evt as any).isToolResult === true
         );
         break;
       }
 
 
 
-      case 'stopGeneration':
-        setStreamingActive(panel, false);
-        {
-          const controller = abortControllers.get(panel);
-          if (controller && !controller.signal.aborted) {
-            controller.abort();
-          }
+      case 'stopGeneration': {
+        const controller = abortControllers.get(panel);
+        if (controller && !controller.signal.aborted) {
+          controller.abort();
         }
-        // Tell the webview to replace the placeholder with "Message Aborted by User" if no chunks yet
+        
+        // Clear streaming flag so user can send another message
+        setStreamingActive(panel, false);
+        
         panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
-        startHealthLoop(panel); // resume health checks
+        startHealthLoop(panel);
         break;
+      }
 
       case 'openSettings':
         vscode.commands.executeCommand(
@@ -359,27 +416,26 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
       case 'newSession': {
         // Stop any active generation
-        setStreamingActive(panel, false);
-        {
-          const controller = abortControllers.get(panel);
-          if (controller && !controller.signal.aborted) {
-            controller.abort();
-          }
+        const controller = abortControllers.get(panel);
+        if (controller && !controller.signal.aborted) {
+          controller.abort();
         }
+        
+        // Clear streaming flag before creating new session
+        setStreamingActive(panel, false);
+        
         panel.webview.postMessage({ type: 'earlyEnd', reason: '(Message Aborted by User)' });
 
         resetSessionTokenCount();
         conversation = [];
         lastFileContextTokens = 0;
 
-        // Save current session state including file modes
+        // Clear fetched files (session-specific)
+        clearFetchedFiles();
+
+        // Save current session state (scope URIs only)
         const savedState = saveSessionContextState();
 
-        // Reset multi-file tracking
-        seenFiles.clear();
-        spentFiles.clear();
-        pendingFileTokens = null;
-        pendingFileUris = [];
         lastContextState = [];
 
         panel.dispose();
@@ -387,21 +443,19 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
         const newPanel = getOrCreateChatPanel();
 
-        // Restore context files with their modes preserved
+        // Restore scope files only (not fetched content)
         await restoreSessionContextState();
 
-        updatePendingFileTokens();
-        lastContextState = getContextFiles().map(f => ({ uri: f.uri.toString(), tokens: f.tokens }));
+        lastContextState = getScopeFiles().map(f => ({ uri: f.uri, tokens: f.tokens }));
 
-        const files = getContextFiles().map(f => ({
-          uri: f.uri.toString(),
+        const files = getScopeFiles().map(f => ({
+          uri: f.uri,
           language: f.language,
           tokens: f.tokens,
-          sendFullFile: f.sendFullFile ?? false
+          sendFullFile: false // Default mode for scope files
         }));
         newPanel.webview.postMessage({ type: 'contextUpdated', files });
 
-        lastFileContextTokens = getEffectiveFileContextTokens();
         postFileContextTokens(newPanel);
         refreshTokenStats(newPanel);
         updateApiStatus(newPanel);
@@ -412,9 +466,6 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
 
 
       case 'stopStream': {
-        // turn off streaming flag
-        setStreamingActive(panel, false);
-
         // abort the in-flight request
         {
           const controller = abortControllers.get(panel);
@@ -422,6 +473,9 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
             controller.abort();
           }
         }
+
+        // Clear streaming flag so user can send another message
+        setStreamingActive(panel, false);
 
         // trigger UI cleanup in the webview (no "no response" placeholder)
         panel.webview.postMessage({ type: 'stopStream' });
@@ -431,15 +485,17 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         break;
       }
 
-      case 'insertCode':
+      case 'insertCode': {
         await handleInsertCode(evt.message);
         break;
+      }
 
-      case 'invokeCommand':
+      case 'invokeCommand': {
         if (evt.command) {
           vscode.commands.executeCommand(evt.command);
         }
         break;
+      }
 
       case 'webviewReady': {
         // Ensure the UI reflects current extension state
@@ -451,27 +507,30 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
           await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
         } catch {}
 
-        // Auto-add the active editor file (only if there's an active editor)
+        // Auto-add the active editor file to SCOPE (only if there's an active editor)
         const active = vscode.window.activeTextEditor;
         if (active) {
-          await addFileToContext(active.document.uri);
+          await addFileToScope(active.document.uri);
 
-          // Compute pending tokens for the startup file (so first send will spend them)
-          updatePendingFileTokens();
-          lastContextState = getContextFiles().map(f => ({
-            uri: f.uri.toString(),
+          lastContextState = getScopeFiles().map(f => ({
+            uri: f.uri,
+            language: f.language,
             tokens: f.tokens
           }));
         }
 
-        // Send full context with mode information to preserve restored states
-        const files = getContextFiles().map(f => ({
-          uri: f.uri.toString(),
+        // Send scope files to UI
+        const files = getScopeFiles().map(f => ({
+          uri: f.uri,
           language: f.language,
           tokens: f.tokens,
-          sendFullFile: f.sendFullFile ?? false
+          sendFullFile: false // Default mode for scope files
         }));
-        panel.webview.postMessage({ type: 'contextUpdated', files });
+        panel.webview.postMessage({ 
+          type: 'contextUpdated', 
+          files,
+          scopeCount: getScopeFiles().length
+        });
 
         // Re-send token totals and refresh the visible token stats
         postFileContextTokens(panel);
@@ -538,6 +597,344 @@ export function attachMessageHandlers(panel: vscode.WebviewPanel, onDispose: () 
         break;
       }
 
+      case 'requestFileContent': {
+        try {
+          const uri = evt.uri ? vscode.Uri.parse(evt.uri) : undefined;
+          if (!uri || typeof evt.startLine !== 'number' || typeof evt.endLine !== 'number') {
+            consecutiveToolFailures.push({
+              toolType: 'fileContent',
+              error: 'Invalid requestFileContent payload - missing required fields',
+              timestamp: Date.now(),
+              payload: evt
+            });
+
+            panel.webview.postMessage({
+              type: 'toolResultToLLM',
+              toolType: 'fileContent',
+              success: false,
+              error: 'Invalid requestFileContent payload'
+            });
+            break;
+          }
+
+          // Show "Reading" bubble indicator
+          panel.webview.postMessage({
+            type: 'showReadingIndicator',
+            uri: uri.toString(),
+            startLine: evt.startLine,
+            lineCount: evt.endLine - evt.startLine + 1
+          });
+
+          // Find file in SCOPE (case-insensitive for Windows compatibility)
+          const scopeFile = getScopeFiles().find(f => f.uri.toLowerCase() === uri.toString().toLowerCase());
+          
+          if (!scopeFile) {
+            consecutiveToolFailures.push({
+              toolType: 'fileContent',
+              error: `File not found in workspace scope: ${uri.toString()}`,
+              timestamp: Date.now(),
+              payload: evt
+            });
+
+            panel.webview.postMessage({
+              type: 'toolResultToLLM',
+              toolType: 'fileContent',
+              success: false,
+              error: `File not found in workspace scope: ${uri.toString()}`
+            });
+            break;
+          }
+
+          // Check if already fetched (deduplication)
+          const alreadyFetched = getFetchedFiles().find(f => f.uri.toString() === uri.toString());
+          
+          let linesToSend: { n: number; text: string }[];
+          let startLine: number;
+          let endLine: number;
+          let sendFullFile: boolean = evt.sendFullFile ?? false;
+          
+          if (alreadyFetched && sendFullFile) {
+            // If requesting full file and we have it cached, return the full cached version
+            linesToSend = alreadyFetched.lines.map(l => ({ n: l.n, text: l.text }));
+            startLine = 1;
+            endLine = alreadyFetched.lines.length;
+            sendFullFile = true;
+          } else if (alreadyFetched && !sendFullFile) {
+            // Requesting a slice of an already-fetched file - check if we have those lines cached
+            const startIdx = Math.max(0, evt.startLine - 1);
+            const endIdx = Math.min(alreadyFetched.lines.length, evt.endLine);
+            
+            // Check if requested range exceeds what's in cache
+            if (evt.endLine > alreadyFetched.lines.length) {
+              // We need to load the file from disk and get the full range
+              console.log(`[requestFileContent] Cache miss for lines ${evt.startLine}-${evt.endLine}, fetching from disk`);
+              
+              const doc = await vscode.workspace.openTextDocument(uri);
+              const text = doc.getText();
+              const allLines = text.split(/\r?\n/).map((t, i) => ({ n: i + 1, text: t }));
+              
+              const actualStartIdx = Math.max(0, evt.startLine - 1);
+              const actualEndIdx = Math.min(allLines.length, evt.endLine);
+              
+              linesToSend = allLines.slice(actualStartIdx, actualEndIdx);
+              startLine = evt.startLine;
+              endLine = evt.endLine;
+            } else if (startIdx < alreadyFetched.lines.length && startIdx <= endIdx) {
+              // We have these lines cached - return only the requested slice
+              linesToSend = alreadyFetched.lines.slice(startIdx, endIdx).map(l => ({ n: l.n, text: l.text }));
+              startLine = evt.startLine;
+              endLine = evt.endLine;
+            } else {
+              // Invalid range in cache - load from disk
+              console.log(`[requestFileContent] Cache invalid for lines ${evt.startLine}-${evt.endLine}, fetching from disk`);
+              
+              const doc = await vscode.workspace.openTextDocument(uri);
+              const text = doc.getText();
+              const allLines = text.split(/\r?\n/).map((t, i) => ({ n: i + 1, text: t }));
+              
+              const actualStartIdx = Math.max(0, evt.startLine - 1);
+              const actualEndIdx = Math.min(allLines.length, evt.endLine);
+              
+              linesToSend = allLines.slice(actualStartIdx, actualEndIdx);
+              startLine = evt.startLine;
+              endLine = evt.endLine;
+            }
+          } else {
+            // File not cached - load from disk fresh
+            const doc = await vscode.workspace.openTextDocument(uri);
+            const text = doc.getText();
+            const allLines = text.split(/\r?\n/).map((t, i) => ({ n: i + 1, text: t }));
+            
+            if (sendFullFile) {
+              linesToSend = allLines;
+              startLine = 1;
+              endLine = allLines.length;
+            } else {
+              const actualStartIdx = Math.max(0, evt.startLine - 1);
+              const actualEndIdx = Math.min(allLines.length, evt.endLine);
+              
+               if (actualStartIdx >= allLines.length || actualStartIdx > actualEndIdx) {
+                consecutiveToolFailures.push({
+                  toolType: 'fileContent',
+                  error: `Invalid line range: ${evt.startLine}-${evt.endLine}`,
+                  timestamp: Date.now(),
+                  payload: evt
+                });
+
+                const optimizationPrompt = consecutiveToolFailures.filter(f => f.toolType === 'fileContent').length >= MAX_CONSECUTIVE_FAILURES
+                  ? `\n\nOPTIMIZATION SUGGESTION: The line range is invalid. Use searchInFile first to find the exact location of content, then request a valid line range based on those results.`
+                  : '';
+
+                panel.webview.postMessage({
+                  type: 'toolResultToLLM',
+                  toolType: 'fileContent',
+                  success: false,
+                  error: `Invalid line range: ${evt.startLine}-${evt.endLine}${optimizationPrompt}`
+                });
+                break;
+              }
+              
+              linesToSend = allLines.slice(actualStartIdx, actualEndIdx);
+              startLine = evt.startLine;
+              endLine = evt.endLine;
+            }
+          }
+
+          // Add to fetched files (will be included in next prompt)
+          const fetchedFile: FileContext = {
+            uri,
+            language: scopeFile.language,
+            lines: linesToSend,
+            summary: `Fetched content from ${uri.toString()}`,
+            tokens: countTextTokens(linesToSend.map(l => l.text).join('\n'))
+          };
+
+          // Add to fetched files and track sent tokens
+          markFileTokensSpent(fetchedFile.tokens);
+          internalAddFetchedFile(fetchedFile);
+          
+          // Update Context dropdown "Tokens sent to LLM" display
+          postFileContextTokens(panel);
+
+          const modeText = sendFullFile ? 'full file' : `offset ${startLine}; limit ${endLine - startLine + 1}`;
+          
+          // Send result back to webview (webview will create collapsed bubble and feed to LLM)
+          panel.webview.postMessage({
+            type: 'toolResultToLLM',
+            toolType: 'fileContent',
+            success: true,
+            uri: uri.toString(),
+            fullFile: sendFullFile,
+            startLine,
+            endLine,
+            lines: linesToSend.map(l => ({ lineNumber: l.n, text: l.text })),
+            summary: `Read file: ${uri.toString().split('/').pop()} - ${modeText}`,
+            content: [
+              `// File content from ${uri}`,
+              `// ${modeText}:`,
+              ...linesToSend.map(l => `${l.n}: ${l.text}`)
+            ].join('\n')
+          });
+
+          consecutiveToolFailures = [];
+
+        } catch (err) {
+          panel.webview.postMessage({
+            type: 'toolResultToLLM',
+            toolType: 'fileContent',
+            success: false,
+            error: String(err)
+          });
+        }
+        break;
+      }
+
+      case 'searchInFile': {
+        try {
+          const query = evt.query;
+          const scopeParam = evt.scope || 'context'; // Default to 'context' (fetched files) instead of 'workspace'
+          const maxResults = evt.maxResults || 5;
+          
+          if (!query || typeof query !== 'string') {
+            panel.webview.postMessage({
+              type: 'toolResultToLLM',
+              toolType: 'search',
+              success: false,
+              error: 'Invalid searchInFile payload - missing query'
+            });
+            break;
+          }
+
+          // Show "Searching" bubble indicator
+          panel.webview.postMessage({
+            type: 'showSearchIndicator',
+            query: query,
+            scope: scopeParam
+          });
+
+          let scopeUris: string[] = [];
+          
+          if (scopeParam === 'context') {
+            // Search in fetched context files first, fall back to scope files if none exist
+            const fetchedFilesList = getFetchedFiles();
+            const scopeFilesList = getScopeFileURIs();
+            
+            if (fetchedFilesList.length > 0) {
+              console.log(`[searchInFile] Searching in ${fetchedFilesList.length} fetched context files`);
+              scopeUris = fetchedFilesList.map(f => f.uri.toString());
+            } else if (scopeFilesList.length > 0) {
+              console.log(`[searchInFile] No fetched files, falling back to ${scopeFilesList.length} scope files`);
+              scopeUris = scopeFilesList;
+            } else {
+              console.log(`[searchInFile] Empty context and scope - no files to search`);
+              scopeUris = [];
+            }
+          } else if (scopeParam === 'scope') {
+            // Search in workspace scope files (files added to context panel)
+            console.log(`[searchInFile] Searching in ${getScopeFileURIs().length} scope files`);
+            scopeUris = getScopeFileURIs();
+          } else {
+            // Default: search fetched files first, fall back to scope if none exist
+            const fetchedUris = getFetchedFiles().map(f => f.uri.toString());
+            const scopeUrisList = getScopeFileURIs();
+            
+            console.log(`[searchInFile] No explicit scope - using ${fetchedUris.length > 0 ? 'fetched' : 'scope'} files`);
+            scopeUris = fetchedUris.length > 0 ? fetchedUris : scopeUrisList;
+          }
+
+          if (scopeUris.length === 0) {
+            consecutiveToolFailures.push({
+              toolType: 'search',
+              error: `No files in search scope`,
+              timestamp: Date.now(),
+              payload: evt
+            });
+
+            panel.webview.postMessage({
+              type: 'toolResultToLLM',
+              toolType: 'search',
+              success: true,
+              query: query,
+              scope: scopeParam,
+              matches: [],
+              summary: `No files in search scope`,
+              content: `// Search for "${query}" - No files available in ${scopeParam} scope`
+            });
+            break;
+          }
+
+          const results = await searchWorkspaceFiles(query, scopeUris, maxResults);
+          
+          if (results.length === 0) {
+            consecutiveToolFailures.push({
+              toolType: 'search',
+              error: `No matches found for query "${query}"`,
+              timestamp: Date.now(),
+              payload: evt
+            });
+
+            const optimizationPrompt = consecutiveToolFailures.filter(f => f.toolType === 'search').length >= MAX_CONSECUTIVE_FAILURES
+              ? `\n\nOPTIMIZATION SUGGESTION: The search returned no results. Try using simpler, more general keywords without special characters (e.g., instead of "^def", try "def" or "function").`
+              : '';
+
+            panel.webview.postMessage({
+              type: 'toolResultToLLM',
+              toolType: 'search',
+              success: true,
+              query: query,
+              scope: scopeParam,
+              matches: [],
+              summary: `Searched for "${query}" in ${scopeParam} scope - found 0 matches${optimizationPrompt}`,
+              content: `// Search for "${query}" returned no results.${optimizationPrompt}`
+            });
+            break;
+          }
+
+          consecutiveToolFailures = [];
+
+          // Count ALL tokens that will be sent to LLM (including metadata comments)
+          const resultContent = [
+            `// Search results for "${query}" (${scopeParam} scope)`,
+            ...results.map(m => `- ${m.uri}:${m.line} - ${m.text}`)
+          ].join('\n');
+          
+          // Increment Tools session token counter with search result tokens
+          const searchTokens = countTextTokens(resultContent);
+          addToolTokens(searchTokens);
+
+          panel.webview.postMessage({
+            type: 'toolResultToLLM',
+            toolType: 'search',
+            success: true,
+            query: query,
+            scope: scopeParam,
+            matches: results.map(r => ({
+              uri: r.uri,
+              line: r.line,
+              text: r.text
+            })),
+            summary: `Searched for "${query}" in ${scopeParam} scope - found ${results.length} matches`,
+            content: resultContent
+          });
+
+        } catch (err) {
+          consecutiveToolFailures.push({
+            toolType: 'search',
+            error: String(err),
+            timestamp: Date.now(),
+            payload: evt
+          });
+
+          panel.webview.postMessage({
+            type: 'toolResultToLLM',
+            toolType: 'search',
+            success: false,
+            error: String(err)
+          });
+        }
+        break;
+      }
+
 
 
 
@@ -575,10 +972,23 @@ async function handleSendToAI(
   rawMessage: string,
   mode: 'chat' | 'validate' | 'complete' = 'chat',
   fileContextOverride?: string,        // now unused for token counting
-  languageOverride?: string
+  languageOverride?: string,
+  isToolResult: boolean = false
 ) {
+  (handleSendToAI as any).callCount = ((handleSendToAI as any).callCount || 0) + 1;
+  console.log(`[handleSendToAI #${(handleSendToAI as any).callCount}] ENTERED - isToolResult=${isToolResult}, message length=${rawMessage?.length || 0}`);
+  
   const userMessage = rawMessage?.trim();
-  if (!userMessage) return;
+  if (!userMessage) {
+    console.log(`[handleSendToAI] Empty message, returning early`);
+    return;
+  }
+
+  // Guard against rapid-fire clicks - silently ignore if already streaming
+  // BUT allow tool results to go through (they're part of the response chain)
+  if (isStreamingActive(panel) && !isToolResult) {
+    return;
+  }
 
   const isFirstTurn = conversation.length === 0;
   const apiType = getConfig<string>('apiLLM.config.apiType', 'openai');
@@ -599,16 +1009,29 @@ async function handleSendToAI(
   const promptContext: PromptContext = {
     code: userMessage,
     mode,
-    fileContexts: getContextFiles().map(f => ({
+    
+    // ONLY include fetched files (content actually sent to LLM via tools)
+    fileContexts: getFetchedFiles().map(f => ({
       uri: f.uri.toString(),
       language: f.language,
       summary: f.summary,
-      slices: extractRelevantSlices(f, userMessage)
+      slices: [{ 
+        startLine: 1, 
+        endLine: f.lines.length, 
+        lines: f.lines 
+      }] // Full content of fetched files (mode already applied during fetch)
     })),
 
     language,
     // Pass through current capabilities
-    capabilities: { editFile: canEditFiles() }
+    capabilities: { 
+      editFile: canEditFiles(),
+      requestFileContent: canRequestFileContent(),
+      searchInFile: canSearchInFile()
+    },
+    
+    // Scope URIs for tool discovery (NO CONTENT included)
+    scopeUris: getScopeFileURIs()
   };
 
   const built = apiType === 'ollama'
@@ -629,59 +1052,68 @@ async function handleSendToAI(
     conversation.unshift(newSystem);
   }
 
-  // 3) Push the user prompt
-  conversation.push({ role: 'user', content: newUser.content });
-
-   // 4) Calculate token usage for this turn
-    // NEW: count ONLY the user prompt tokens for the bubble
+  // Calculate token usage for this turn upfront
   const userTurnTokens = countMessageTokens([newUser]);
 
-  // Add chat tokens for the user prompt to the session total
-  addChatTokens(userTurnTokens);
+  console.log(`[handleSendToAI] isToolResult=${isToolResult}, conversation length before=${conversation.length}`);
+  if (isToolResult) {
+    console.log(`[handleSendToAI] Tool result content:`, newUser.content.substring(0, 200));
+  }
 
-  // Spend pending diff when present; otherwise on first turn spend effective tokens.
-  // Mark the corresponding URIs as spent to prevent re-add double-counting.
-  const pending = pendingFileTokens ?? 0;
-  if (pending > 0) {
-    markFileTokensSpent(pending);
-    for (const uri of pendingFileUris) {
-      spentFiles.add(uri);
+  // 3) Push the message (user or tool result depending on isToolResult flag)
+  if (isToolResult) {
+    console.log(`[handleSendToAI] Tool result flow - last message role: ${conversation[conversation.length - 1]?.role}`);
+    
+    // Tool results should be appended to the last assistant message to avoid consecutive assistant messages
+    const lastMessage = conversation[conversation.length - 1];
+    if (lastMessage && lastMessage.role === 'assistant') {
+      // Append tool result to existing assistant message
+      console.log(`[handleSendToAI] Appending tool result to assistant message with content length: ${lastMessage.content.length}`);
+      lastMessage.content += '\n\n' + newUser.content;
+      console.log(`[handleSendToAI] Appended tool result, new assistant content length: ${lastMessage.content.length}`);
+    } else {
+      // No assistant message exists yet, create one
+      conversation.push({ role: 'assistant', content: newUser.content });
+      console.log(`[handleSendToAI] Created new assistant message for tool result`);
     }
-    pendingFileTokens = null;
-    pendingFileUris = [];
-  } else if (isFirstTurn) {
-    const effective = getEffectiveFileContextTokens();
-    if (effective > 0) {
-      markFileTokensSpent(effective);
-      for (const f of getContextFiles()) {
-        spentFiles.add(f.uri.toString());
-      }
-    }
+    
+    // CRITICAL: Add a follow-up user message to prompt the LLM to continue responding
+    const continuationPrompt = "Please continue with your response using this information.";
+    conversation.push({ role: 'user', content: continuationPrompt });
+    console.log(`[handleSendToAI] Added continuation prompt, new conversation length=${conversation.length}`);
+    
+    // Log the last 3 messages for debugging tool call flow
+    const last3 = conversation.slice(-3).map(m => ({ role: m.role, contentPreview: m.content.substring(0, 50) }));
+    console.log(`[handleSendToAI] Last 3 messages before continuation:`, JSON.stringify(last3));
+   } else {
+    conversation.push({ role: 'user', content: newUser.content });
+
+    // Add chat tokens for the user prompt to the session total
+    addChatTokens(userTurnTokens);
   }
 
 
+   // 5) Warn if over limit (only for user messages, not tool results)
+  if (!isToolResult) {
+    const total = countMessageTokens(conversation);
+    const contextSize = getMaxContextTokens();
+    if (total > contextSize) {
+      vscode.window.showWarningMessage(
+        `Your conversation uses ${total} tokens, exceeding your limit of ${contextSize}.`
+      );
+    }
 
-  // 5) Warn if over limit
-  const total = countMessageTokens(conversation);
-  const contextSize = getMaxContextTokens();
-  if (total > contextSize) {
-    vscode.window.showWarningMessage(
-      `Your conversation uses ${total} tokens, exceeding your limit of ${contextSize}.`
-    );
+    // 6) Append user bubble for non-tool-result messages
+    panel.webview.postMessage({
+      type: 'appendUser',
+      message: newUser.content,
+      chatTokens: userTurnTokens ?? 0
+    });
   }
 
-  // 6) Append user bubble
-  panel.webview.postMessage({
-    type: 'appendUser',
-    message: newUser.content,
-    chatTokens: userTurnTokens,
-    fileTokens: pendingFileTokens ?? 0
-  });
+   refreshTokenStats(panel);
 
-  // Reset after using once
-  pendingFileTokens = null;
-
-  refreshTokenStats(panel);
+  console.log(`[handleSendToAI] Sending to API, messages:`, JSON.stringify(conversation.map(m => ({ role: m.role, content: m.content.substring(0, 100) + (m.content.length > 100 ? '...' : '') }))));
 
   const controller = new AbortController();
   abortControllers.set(panel, controller);
@@ -699,9 +1131,15 @@ async function handleSendToAI(
         addChatTokens(chunkTokens);
         refreshTokenStats(panel);
       },
-      onDone: () => startHealthLoop(panel)
+      onDone: () => {
+        console.log(`[handleSendToAI] Streaming complete, calling onDone`);
+        startHealthLoop(panel);
+        // DON'T clear streaming flag here - it should stay active until explicit stop or error
+        // This allows tool result continuations to stream normally without race conditions
+      }
     });
-    setStreamingActive(panel, false);
+    console.log(`[handleSendToAI] routeChatRequest completed successfully`);
+    // Streaming flag is now cleared in streamingHandler.ts finalize() after all chunks are sent
   } catch (err) {
     setStreamingActive(panel, false);
     panel.webview.postMessage({ type: 'earlyEnd', reason: 'Unknown Error' });
@@ -709,7 +1147,6 @@ async function handleSendToAI(
     throw err;
   }
 }
-
 
 async function handleInsertCode(message: string) {
   if (!message) return;

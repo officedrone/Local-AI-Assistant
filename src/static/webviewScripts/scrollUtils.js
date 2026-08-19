@@ -8,11 +8,23 @@ let isProgrammaticScroll = false;
 // Internal flag to throttle scrollToBottom calls
 let scrollPending = false;
 
+// Force browser to recalculate layout (triggers reflow)
+function forceReflow() {
+  const chat = document.getElementById('chat-container');
+  if (!chat) return;
+  
+  // Force reflow by reading offsetHeight
+  void chat.offsetHeight;
+}
+
 export function scrollToBottom(force = false, behavior = 'auto') {
   if (!force && !shouldAutoScroll) return;
   const chat = document.getElementById('chat-container');
   if (!chat) return;
 
+  // Force reflow to ensure scrollHeight is up-to-date
+  forceReflow();
+  
   isProgrammaticScroll = true;
   chat.scrollTo({ top: chat.scrollHeight, behavior });
   isProgrammaticScroll = false;

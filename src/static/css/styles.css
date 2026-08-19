@@ -108,6 +108,10 @@ message:hover {
   width: 100%; /* ensures it fills the available container space */
   display: block; /* so width applies fully */
   box-sizing: border-box; /* padding stays inside the width */
+  
+  /* FIX: Prevent flex item from shrinking and allow proper height expansion */
+  flex-shrink: 0;
+  min-height: 1px; /* Allow any height */
 }
 
 .ai-message:hover {
@@ -331,28 +335,69 @@ w;
   font-size:.85em;
   color:var(--vscode-input-foreground);
   white-space:nowrap;
+  position:relative;           /* allow absolute positioning of pings */
+  overflow:visible;            /* let floating numbers escape */
+  z-index:0;
 }
 
-/* token‑count boxes (session, file, total, context size) */
+/* token‑count boxes (session, file, tools, total, context size) */
 #sessionTokenCount,
 #fileTokenCount,
+#toolsTokenCount,
 #totalTokenCount
  {
-  padding:4px 8px;
-  border-radius:4px;
-  background-color: var(--vscode-editorWidget-background);
-  border:1px solid var(--vscode-editorWidget-border);
-  font-size:.85em;
-  color:var(--vscode-input-foreground);
-  text-align:center;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  transition:
-    background-color .2s ease,
-    color .2s ease,
-    transform .1s ease,
-    box-shadow .2s ease;
+   padding:4px 12px;
+   border-radius:4px;
+   background-color: var(--vscode-editorWidget-background);
+   border:1px solid var(--vscode-editorWidget-border);
+   font-size:.85em;
+   color:var(--vscode-input-foreground);
+   text-align:center;
+   white-space:nowrap;
+   overflow:hidden;
+   text-overflow:ellipsis;
+   min-width:4ch;
+   font-variant-numeric:tabular-nums;
+   transition:
+     background-color .2s ease,
+     color .2s ease,
+     transform .1s ease,
+     box-shadow .2s ease;
+}
+
+/* Ensure all token count elements have consistent positioning for pings */
+#sessionTokenCount, #fileTokenCount, #toolsTokenCount, #totalTokenCount {
+  position: relative !important;
+  overflow: visible !important;
+}
+
+/* Ensure parent containers allow overflow for ping animation */
+#sessionTokenContainer,
+.llm-info-row,
+.context-section-dropdown > summary {
+  overflow: visible !important;
+}
+
+/* Floating ping element (created dynamically in JS) */
+.token-ping-float {
+  position: absolute;
+  top: -5px;
+  color: #4caf50 !important;
+  text-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+  font-weight: bold;
+  pointer-events: none;
+  z-index: 100;
+  font-size: 0.8em;
+}
+
+/* Flash animation for token number when it changes */
+@keyframes token-green-flash {
+  0% { color: #4caf50; transform: scale(1.1); }
+  100% { color: var(--vscode-input-foreground); transform: scale(1); }
+}
+
+.token-green-flash {
+  animation: token-green-flash 0.3s ease-out;
 }
 #contextSizeBox {
   padding:4px 8px;
@@ -817,5 +862,208 @@ details.capabilities-dropdown[open] > summary::before {
   flex-shrink: 0;
 }
 
+/* ─── TOOL BUBBLE STYLES ───────────── */
+.message.ai-message.tool-bubble {
+  align-self: flex-start;
+  background: var(--assistant-bg);
+  max-width: 100%;
+  width: 100%;
+  display: block;
+}
+
+.message.ai-message.tool-bubble .markdown-body {
+  display: flex;
+  flex-direction: column;
+  max-height: 300px; 
+  overflow: hidden;
+}
+
+.message.ai-message.tool-bubble .tool-content {
+  overflow-y: auto;
+  padding: 8px 12px;
+  max-height: calc(300px - 45px);
+  flex-grow: 1;
+}
+
+.message.ai-message.tool-bubble .tool-details {
+  border: none;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message.ai-message.tool-bubble .tool-details > summary {
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.2s ease;
+  list-style: none;
+}
+
+.message.ai-message.tool-bubble .tool-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.message.ai-message.tool-bubble .tool-details[open] > summary {
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+}
+
+.message.ai-message.tool-bubble .tool-details:not([open]) > summary {
+  padding: 8px 12px;
+}
+
+.message.ai-message.tool-bubble .tool-content::-webkit-scrollbar{width:8px;}
+.message.ai-message.tool-bubble .tool-content::-webkit-scrollbar-track{background:transparent;}
+.message.ai-message.tool-bubble .tool-content::-webkit-scrollbar-thumb{
+  background-color:var(--btn-bg); border-radius:4px; transition:.2s ease;
+}
+.message.ai-message.tool-bubble .tool-content::-webkit-scrollbar-thumb:hover{
+  background-color:var(--btn-hover-bg);
+}
+
+/* Hide tool-payload and tool-result when collapsed */
+.message.ai-message.tool-bubble .tool-details:not([open]) .tool-payload,
+.message.ai-message.tool-bubble .tool-details:not([open]) .tool-result {
+  display: none !important;
+}
+
+.message.ai-message.tool-bubble .tool-header {
+  flex-shrink: 0;
+  font-weight: bold;
+  padding: 8px 12px;
+  background: var(--vscode-input-background);
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.message.ai-message.tool-bubble .tool-header-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Tool status spinner animation */
+@keyframes tool-spinner {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.tool-status-spinner::before {
+  content: '⟳';
+  display: inline-block;
+  animation: tool-spinner 1s linear infinite;
+  font-size: 1.2em;
+}
+
+.tool-status-complete::before {
+  content: '✓';
+  color: var(--vscode-terminal-ansiGreen);
+}
+
+.tool-status-error::before {
+  content: '✗';
+  color: var(--vscode-terminal-ansiRed);
+}
+
+/* Timestamp styling */
+.tool-timestamp {
+  font-size: 0.75em;
+  color: var(--vscode-input-foreground);
+  opacity: 0.7;
+  margin-left: auto;
+}
+
+.message.ai-message.tool-bubble .tool-payload {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 0.85em;
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+
+.message.ai-message.tool-bubble .tool-result {
+  background: var(--vscode-editorHoverWidget-background);
+  border-top: 1px solid var(--vscode-editorWidget-border);
+  padding: 8px 0;
+  font-size: 0.9em;
+}
+
+.message.ai-message.tool-bubble .tool-result.error {
+  background: var(--vscode-errorForeground);
+  color: white;
+}
+
+/* ─── TOOL RETRY BUBBLE STYLES ───────────── */
+.message.ai-message.retry-bubble {
+  background: linear-gradient(135deg, 
+    var(--vscode-input-background), 
+    var(--vscode-editorWidget-background));
+  border-left: 3px solid #ff9800; /* Orange for retry warning */
+}
+
+.message.ai-message.retry-bubble .retry-header {
+  font-weight: 600;
+  color: #ff9800;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ─── INDICATOR STYLES ───────────── */
+.reading-indicator,
+.search-indicator {
+  align-self: flex-start;
+  background: linear-gradient(135deg, 
+    var(--vscode-input-background), 
+    var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 8px;
+  padding: 6px 12px;
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  animation: fadeInOut 2s ease-in-out forwards;
+}
+
+.indicator-icon {
+  font-size: 1.2em;
+}
+
+.indicator-text {
+  color: var(--vscode-input-foreground);
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(-5px); }
+  10% { opacity: 1; transform: translateY(0); }
+  90% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-5px); }
+}
+
+/* ─── EDIT PREVIEW CONTAINER (enhanced) ───────────── */
+.edit-previews-container {
+  margin-top: 12px;
+}
+
+.message.ai-message .edit-preview-wrapper {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.message.ai-message .edit-preview-wrapper pre {
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 0.85em;
+}
 
 

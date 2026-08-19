@@ -169,6 +169,11 @@ export async function streamFromOllama({
 
   let buffer = '';
   let rawChunkCount = 0;
+  let didReceiveDone = false;
+  const requestId = Date.now();
+  
+  console.log(`[streamFromOllama] REQUEST ${requestId} STARTED, messages=${messages.length}`);
+  
   while (true) {
     if (signal?.aborted) {
       try { await reader.cancel(); } catch {}
@@ -188,6 +193,13 @@ export async function streamFromOllama({
 
     for (const line of lines) {
       if (!line.trim()) continue;
+
+      // Guard against processing chunks after done
+      if (didReceiveDone) {
+        console.log(`[streamFromOllama] Dropping chunk after done: "${line.substring(0, 50)}..."`);
+        continue;
+      }
+
       try {
         const parsed = JSON.parse(line);
         const message = parsed?.message;
@@ -211,7 +223,11 @@ export async function streamFromOllama({
           onToken(token);
         }
         
-        if (parsed?.done && onDone) onDone();
+        if (parsed?.done) {
+          console.log(`[streamFromOllama] Received done=true, rawChunkCount=${rawChunkCount}`);
+          didReceiveDone = true;
+          break; // Exit the for loop, will call onDone after processing remaining buffer content
+        }
       } catch {
         console.warn('⚠️ Failed to parse streamed chunk:', line);
       }

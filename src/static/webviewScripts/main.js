@@ -1,7 +1,7 @@
 // /src/static/webviewScripts/main.js
 import { setupScrollHandling } from './scrollUtils.js';
 import { setupChatSend } from './chat.js';
-import { setupContextControls, updateContextFileList } from './contextControls.js';
+import { setupContextControls, updateContextFileList, updateScopeCount } from './contextControls.js';
 import { updateTokenPanel, updateFileContextTokens, updateIncludeCtxStatus } from './sessionTokens.js';
 import { setupLLMControls } from './llmControls.js';
 import { setupMessageRouter } from './messageRouter.js';
@@ -82,9 +82,12 @@ window.addEventListener('message', (event) => {
     updateTokenPanel(msg, contextSize);
   }
 
-  // Update file context tokens information
+  // Update file context tokens information (scope + sent dual display)
   if (msg.type === 'fileContextTokens') {
-    updateFileContextTokens(msg.tokens, msg.contextSize);
+    updateFileContextTokens({ 
+      scopeTokens: msg.scopeTokens,
+      sentTokens: msg.sentTokens 
+    }, msg.contextSize);
   }
 
   // Update context file list and include status when context changes
@@ -92,6 +95,11 @@ window.addEventListener('message', (event) => {
     const files = Array.isArray(msg.files) ? msg.files : [];
     updateIncludeCtxStatus(files.length > 0);
     updateContextFileList(vscode, files);
+    
+    // Update scope count display if provided
+    if (typeof msg.scopeCount === 'number') {
+      updateScopeCount(msg.scopeCount);
+    }
   }
 
   if (msg.type === 'toolResult') {

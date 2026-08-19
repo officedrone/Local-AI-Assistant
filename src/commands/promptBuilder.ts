@@ -35,6 +35,9 @@ export interface PromptContext {
 
   language?: string;
   capabilities?: { [key: string]: boolean };
+  
+  // workspace scope files (URIs without content)
+  scopeUris?: string[];
 }
 
 /**
@@ -97,7 +100,8 @@ export function buildOpenAIMessages({
   fileContext,
   fileContexts,
   language = 'plaintext',
-  capabilities = {}
+  capabilities = {},
+  scopeUris
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
   const normalized = normalizeFileContexts(fileContexts, fileContext, language);
@@ -109,7 +113,8 @@ export function buildOpenAIMessages({
       language,
       normalized,
       contextSize,
-      capabilities
+      capabilities,
+      scopeUris
     );
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(
@@ -117,7 +122,8 @@ export function buildOpenAIMessages({
       normalized,
       language,
       contextSize,
-      capabilities
+      capabilities,
+      scopeUris
     );
   } else {
     systemPrompt = completionPrompt(
@@ -125,7 +131,8 @@ export function buildOpenAIMessages({
       normalized,
       language,
       contextSize,
-      capabilities
+      capabilities,
+      scopeUris
     );
   }
 
@@ -151,7 +158,8 @@ export function buildOllamaMessages({
   fileContext,
   fileContexts,
   language = 'plaintext',
-  capabilities = {}
+  capabilities = {},
+  scopeUris
 }: PromptContext): { role: 'system' | 'user'; content: string }[] {
   const contextSize = getContextSize();
   const normalized = normalizeFileContexts(fileContexts, fileContext, language);
@@ -163,7 +171,8 @@ export function buildOllamaMessages({
       language,
       normalized,
       contextSize,
-      capabilities
+      capabilities,
+      scopeUris
     );
   } else if (mode === 'validate') {
     systemPrompt = validationPrompt(
@@ -171,7 +180,8 @@ export function buildOllamaMessages({
       normalized,
       language,
       contextSize,
-      capabilities
+      capabilities,
+      scopeUris
     );
   } else {
     systemPrompt = completionPrompt(
@@ -179,7 +189,8 @@ export function buildOllamaMessages({
       normalized,
       language,
       contextSize,
-      capabilities
+      capabilities,
+      scopeUris
     );
   }
 

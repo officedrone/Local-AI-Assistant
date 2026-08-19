@@ -111,6 +111,8 @@ export async function streamFromOpenAI({
   onToken: (token: string) => void;
   onDone?: () => void;
 }): Promise<void> {
+  const requestId = Date.now();
+  console.log(`[streamFromOpenAI] REQUEST ${requestId} STARTED, messages=${messages.length}, last msg role=${messages[messages.length-1]?.role}`);
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const endpoint = config.get<string>('apiLLM.apiURL.endpoint');
   if (!endpoint) throw new Error('No endpoint configured');
@@ -139,6 +141,8 @@ export async function streamFromOpenAI({
 
   let buffer = '';
   let rawChunkCount = 0;
+  let didReceiveDone = false;
+  
   while (true) {
     if (signal?.aborted) {
       try { await reader.cancel(); } catch {}
@@ -159,10 +163,19 @@ export async function streamFromOpenAI({
       const line = rawLine.trim();
       if (!line) continue;
 
+      // Guard against processing chunks after [DONE]
+      if (didReceiveDone) {
+        console.log(`[streamFromOpenAI] Dropping chunk after [DONE]: "${line.substring(0, 50)}..."`);
+        continue;
+      }
+
       const clean = line.startsWith('data:') ? line.replace(/^data:\s*/, '') : line;
+      console.log(`[streamFromOpenAI] Parsed line #${rawChunkCount}: "${clean.substring(0, 100)}${clean.length > 100 ? '...' : ''}"`);
+      
       if (clean === '[DONE]') {
-        if (onDone) onDone();
-        return;
+        console.log(`[streamFromOpenAI] Received [DONE], rawChunkCount=${rawChunkCount}, breaking loop`);
+        didReceiveDone = true;
+        break; // Exit the for loop, will call onDone after processing remaining buffer content
       }
 
       try {
@@ -171,6 +184,8 @@ export async function streamFromOpenAI({
         
         const token = delta?.content;
         const reasoning = delta?.reasoning_content || delta?.reasoning || delta?.thought || delta?.thinking;
+        
+        console.log(`[streamFromOpenAI] Extracted token: ${!!token}, reasoning: ${!!reasoning}`);
         
         // Handle reasoning blocks - send tags only at start/end, not per chunk
         if (reasoning) {
@@ -191,6 +206,9 @@ export async function streamFromOpenAI({
         console.warn('⚠️ Failed to parse streamed chunk:', clean, err);
       }
     }
+    
+    // Early exit if we received [DONE] or signal was aborted
+    if (didReceiveDone || signal?.aborted) break;
   }
 
   // Close any open reasoning block at end of stream

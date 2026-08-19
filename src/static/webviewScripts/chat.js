@@ -107,6 +107,334 @@ export function createAssistantBubble() {
   return bubble;
 }
 
+// NEW: Create collapsed tool result bubble showing what was sent to LLM
+export function appendToolResultBubble(toolType, summary, content) {
+  const chat = document.getElementById('chat-container');
+  const bubble = document.createElement('div');
+  bubble.className = 'message ai-message tool-result-bubble';
+  bubble.id = `tool-result-${Date.now()}`;
+
+  // Escape HTML in content for display
+  const escapedContent = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  bubble.innerHTML = `
+    <div class="markdown-body">
+      <details class="tool-result-details" open>
+        <summary class="tool-result-header">🔧 ${escapeHtml(summary)}</summary>
+        <pre class="tool-result-content">${escapedContent}</pre>
+      </details>
+    </div>
+  `;
+
+  chat.appendChild(bubble);
+  scrollToBottom(true, 'smooth');
+  return bubble;
+}
+
+// Helper: escape HTML for summary text
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Format tool type name for display (camelCase to Title Case with spaces)
+ */
+export function formatToolName(toolType) {
+  // Convert camelCase to "Title Case Words"
+  return toolType
+    .replace(/([A-Z])/g, ' $1')
+    .trim()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+// Track tool bubbles for lifecycle management
+let toolBubbles = []; // Array of {id, element, buffer, status, payload}
+let retryBubbleCount = 0; // For unique IDs
+
+/**
+ * Create a new tool call bubble (collapsed by default)
+ * @param {string} toolType - Type of tool being called
+ * @returns {HTMLElement} The created tool bubble element
+ */
+export function createToolBubble(toolType = 'Unknown') {
+  const chat = document.getElementById('chat-container');
+  const bubble = document.createElement('div');
+  bubble.className = 'message ai-message tool-bubble';
+  bubble.id = `tool-${Date.now()}`;
+
+  // Format tool type for display (e.g., "searchInFile" → "Search In File")
+  const displayName = formatToolName(toolType);
+  const timestamp = new Date().toLocaleTimeString();
+
+  bubble.innerHTML = `
+    <div class="markdown-body tool-container">
+      <details class="tool-details" open>
+        <summary class="tool-header">
+          <span class="tool-header-content">
+            <span class="tool-status-indicator tool-status-spinner"></span>
+            <span>🔧 Tool Call - ${displayName}</span>
+            <span class="tool-timestamp">${timestamp}</span>
+          </span>
+        </summary>
+        <div class="tool-content">
+          <pre class="tool-payload">// Loading...</pre>
+          <div class="tool-result"></div>
+        </div>
+      </details>
+    </div>
+  `;
+
+  chat.appendChild(bubble);
+  
+  const contentEl = bubble.querySelector('.tool-content');
+  if (contentEl) {
+    contentEl.dataset.autoScroll = 'true';
+    contentEl.addEventListener('scroll', () => {
+      const atBottom = contentEl.scrollHeight - contentEl.scrollTop - contentEl.clientHeight < 20;
+      contentEl.dataset.autoScroll = atBottom.toString();
+    });
+  }
+
+  console.log(`[Dev-Tool] createToolBubble: type=${toolType}, id=${bubble.id}`);
+  scrollToBottom(true, 'smooth');
+  
+  return bubble;
+}
+
+/**
+ * Update tool bubble title with actual tool name after JSON is parsed
+ */
+export function updateToolBubbleTitle(bubbleId, toolType) {
+  const bubble = toolBubbles.find(t => t.id === bubbleId);
+  if (!bubble) return;
+  
+  bubble.payload = bubble.payload || {};
+  bubble.payload.type = toolType;
+  
+  const displayName = formatToolName(toolType);
+  const header = bubble.element.querySelector('.tool-header');
+  if (header) {
+    const content = header.querySelector('.tool-header-content');
+    if (content) {
+      const spans = content.querySelectorAll('span');
+      if (spans.length >= 2 && !bubble.element.querySelector('.tool-details')?.getAttribute('open')) {
+        spans[1].textContent = `🔧 Tool Call - ${displayName}`;
+      }
+    }
+  }
+}
+
+/**
+ * Add tool bubble to tracking array
+ */
+export function addToolBubble(element) {
+  const bubbleData = {
+    id: element.id,
+    element: element,
+    buffer: '',
+    status: 'pending', // pending | executing | complete | error
+    payload: null
+  };
+  toolBubbles.push(bubbleData);
+  return bubbleData;
+}
+
+/**
+ * Update tool bubble with accumulated JSON payload
+ */
+export function updateToolBubblePayload(bubbleId, jsonPayload) {
+  console.log(`[Dev-Tool] updateToolBubblePayload: id=${bubbleId}, payloadLength=${jsonPayload.length}`);
+  const bubble = toolBubbles.find(t => t.id === bubbleId);
+  if (!bubble) return;
+
+  bubble.buffer = jsonPayload;
+  
+  const payloadEl = bubble.element.querySelector('.tool-payload');
+  if (payloadEl) {
+    payloadEl.textContent = jsonPayload;
+  }
+  
+  const contentEl = bubble.element.querySelector('.tool-content');
+  if (contentEl && contentEl.dataset.autoScroll === 'true') {
+    void contentEl.offsetHeight;
+    contentEl.scrollTop = contentEl.scrollHeight;
+  }
+}
+
+/**
+ * Mark tool as executing (spinner continues)
+ */
+export function markToolExecuting(bubbleId) {
+  console.log(`[Dev-Tool] markToolExecuting: id=${bubbleId}`);
+  const bubble = toolBubbles.find(t => t.id === bubbleId);
+  if (!bubble) return;
+
+  bubble.status = 'executing';
+  
+  // Update status indicator to ensure spinner is showing
+  const indicator = bubble.element.querySelector('.tool-status-indicator');
+  if (indicator) {
+    indicator.className = 'tool-status-indicator tool-status-spinner';
+  }
+}
+
+/**
+ * Close tool bubble with result or error
+ */
+export function closeToolBubble(bubbleId, result = null, isError = false) {
+  console.log(`[Dev-Tool] closeToolBubble called: bubbleId=${bubbleId}, toolBubbles.length=${toolBubbles.length}`);
+  toolBubbles.forEach((t, i) => {
+    console.log(`[Dev-Tool]   toolBubbles[${i}]: id=${t.id}, status=${t.status}`);
+  });
+  
+  const bubble = toolBubbles.find(t => t.id === bubbleId);
+  if (!bubble) {
+    console.error(`[Dev-Tool] closeToolBubble: bubble NOT FOUND for id=${bubbleId}`);
+    return;
+  }
+
+  console.log(`[Dev-Tool] closeToolBubble: found bubble, hasResult=${!!result}, isError=${isError}`);
+
+  bubble.status = isError ? 'error' : 'complete';
+  
+  const indicator = bubble.element.querySelector('.tool-status-indicator');
+  if (indicator) {
+    indicator.className = `tool-status-indicator tool-status-${isError ? 'error' : 'complete'}`;
+  }
+
+  // Collapse when finalized and update header
+  const details = bubble.element.querySelector('.tool-details');
+  console.log(`[Dev-Tool] closeToolBubble: found details element=${!!details}`);
+  if (details) {
+    console.log(`[Dev-Tool] closeToolBubble: BEFORE - details.open=${details.open}`);
+    details.removeAttribute('open');
+    
+    const summary = bubble.element.querySelector('.tool-header');
+    if (summary) {
+      const content = summary.querySelector('.tool-header-content');
+      if (content && content.querySelector('span:nth-child(2)')) {
+        const toolNameSpan = content.querySelector('span:nth-child(2)');
+        const displayName = formatToolName(bubble.payload?.type || 'Unknown');
+        toolNameSpan.textContent = `🔧 Tool Call Complete - ${displayName}`;
+      }
+    }
+    
+    console.log(`[Dev-Tool] closeToolBubble: AFTER - details.open=${details.open}`);
+  } else {
+    console.error('[Dev-Tool] closeToolBubble: details element NOT FOUND!');
+  }
+
+  // Add result content
+  const resultEl = bubble.element.querySelector('.tool-result');
+  if (resultEl) {
+    if (isError) {
+      resultEl.className = 'tool-result error';
+      resultEl.innerHTML = `<strong>Error:</strong> ${escapeHtml(result || 'Unknown error')}`;
+    } else if (result) {
+      // Result received from extension - update header too
+      resultEl.className = 'tool-result';
+      resultEl.innerHTML = `<strong>Result:</strong><br/>${escapeHtml(result)}`;
+      
+      // Update the tool call header to show spinner → checkmark
+      const headerSummary = bubble.element.querySelector('.tool-header');
+      if (headerSummary && !isError) {
+        const content = headerSummary.querySelector('.tool-header-content');
+        if (content) {
+          const spans = content.querySelectorAll('span');
+          if (spans.length >= 2) {
+            // Keep the tool name but update status indicator
+            spans[0].className = 'tool-status-indicator tool-status-complete';
+          }
+        }
+      }
+    } else {
+      // Still executing - show waiting message, keep spinner in header
+      resultEl.className = 'tool-result';
+      resultEl.innerHTML = `<span class="status-reason">⟳ Executing tool...</span>`;
+    }
+  }
+}
+
+/**
+ * Create retry feedback bubble
+ */
+export function createRetryBubble(toolType, attemptNumber, maxAttempts) {
+  const chat = document.getElementById('chat-container');
+  const bubble = document.createElement('div');
+  bubble.className = 'message ai-message retry-bubble';
+  bubble.id = `retry-${Date.now()}-${++retryBubbleCount}`;
+
+  const remaining = maxAttempts - attemptNumber;
+  const message = remaining > 0 
+    ? `⚠️ Tool '${formatToolName(toolType)}' failed, retrying (attempt ${attemptNumber}/${maxAttempts})...`
+    : `⚠️ Tool '${formatToolName(toolType)}' failed after ${maxAttempts} retries. Please try a different approach.`;
+
+  bubble.innerHTML = `
+    <div class="markdown-body">
+      <div class="retry-header">
+        <span>${remaining > 0 ? '⟳' : '⚠️'}</span>
+        <span>${message}</span>
+      </div>
+    </div>
+  `;
+
+  chat.appendChild(bubble);
+  scrollToBottom(true, 'smooth');
+  
+  return bubble;
+}
+
+/**
+ * Get active (last) tool bubble that's still pending or executing
+ */
+export function getActiveToolBubble() {
+  if (toolBubbles.length === 0) {
+    console.log('[Dev-Tool] getActiveToolBubble: no bubbles');
+    return null;
+  }
+  
+  console.log(`[Dev-Tool] getActiveToolBubble: checking ${toolBubbles.length} bubbles`);
+  toolBubbles.forEach((t, i) => {
+    console.log(`[Dev-Tool]   toolBubbles[${i}]: id=${t.id}, status=${t.status}`);
+  });
+  
+  const last = toolBubbles[toolBubbles.length - 1];
+  console.log(`[Dev-Tool] getActiveToolBubble: last bubble id=${last.id}, status=${last.status}`);
+  
+  if (last.status === 'pending' || last.status === 'executing') {
+    console.log(`[Dev-Tool] getActiveToolBubble: returning bubble ${last.id}`);
+    return last;
+  }
+  console.log('[Dev-Tool] getActiveToolBubble: bubble not active');
+  return null;
+}
+
+/**
+ * Get all tool bubbles
+ */
+export function getToolBubbles() {
+  return [...toolBubbles];
+}
+
+/**
+ * Clear all tool bubbles (on new session)
+ */
+export function clearToolBubbles() {
+  toolBubbles.forEach(b => {
+    if (b.element.parentNode) {
+      b.element.parentNode.removeChild(b.element);
+    }
+  });
+  toolBubbles = [];
+}
+
 // NEW: Get active thinking buffer (for last thinking block)
 export function getActiveThinkingBuffer() {
   if (thinkingBubbles.length === 0) return '';
@@ -124,6 +452,9 @@ export function setActiveThinkingBuffer(content) {
   const contentEl = lastBubble.element.querySelector('.thinking-content');
   if (contentEl) {
     contentEl.innerHTML = renderMd(content);
+    
+    // Force reflow to ensure proper scroll calculations
+    void contentEl.offsetHeight;
     
     // Auto-scroll within thinking bubble if enabled
     if (contentEl.dataset.autoScroll === 'true') {
@@ -204,22 +535,41 @@ export function getStreamingState() {
 export function setupChatSend(vscode) {
   const input = document.getElementById('messageInput');
   const sendBtn = document.getElementById('sendButton');
+  
+  // Sync button state with streaming state on every click as safety fallback
+  const updateButtonTextFromState = () => {
+    const state = getStreamingState();
+    if (state.isStreaming) {
+      sendBtn.textContent = 'Stop';
+    } else {
+      sendBtn.textContent = 'Send';
+    }
+  };
+  
   sendBtn.onclick = () => {
     if (sendBtn.textContent === 'Send') {
       const txt = input.value.trim();
       if (!txt) return;
       input.value = '';
-      sendBtn.textContent = 'Stop';
-
-      // Post sendToAI with explicit mode
-      vscode.postMessage({
-        type: 'sendToAI',
-        message: txt,
-        mode: 'chat'
-      });
-      scrollToBottom(true, 'smooth');
-      setUserInitiatedScroll(false);
-      setAutoScrollEnabled(true);
+      
+      // Button state will be updated by syncStreamingState message from extension
+      // Fallback update in case sync message is delayed
+      setTimeout(updateButtonTextFromState, 50);
+      
+      try {
+        vscode.postMessage({
+          type: 'sendToAI',
+          message: txt,
+          mode: 'chat'
+        });
+        
+        scrollToBottom(true, 'smooth');
+        setUserInitiatedScroll(false);
+        setAutoScrollEnabled(true);
+      } catch (err) {
+        // Silent recovery - reset button state on failure
+        sendBtn.textContent = 'Send';
+      }
     } else {
       vscode.postMessage({ type: 'stopGeneration' });
     }

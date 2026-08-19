@@ -5,9 +5,10 @@ import { registerCodeActions } from './commands/codeActions';
 import { fetchAvailableModels } from './api/apiRouter';
 import {
   addFileToContext,
-  addAllOpenEditorsToContext,
+  addAllOpenEditorsToScope,
   clearContextFiles,
-  getCodeEditor
+  getCodeEditor,
+  addWorkspaceFilesToScope
 } from './handlers/chatPanel/chatPanelContext';
 
 
@@ -38,6 +39,7 @@ export function activate(context: vscode.ExtensionContext) {
   registerAddAllOpenFilesCommand(context);
   registerClearContextCommand(context);
   registerAddCurrentFileCommand(context);
+  registerAddWorkspaceScopeCommand(context);
 
 
   // 2) Watch for apiType changes and clear model wherever it was set
@@ -295,7 +297,7 @@ function registerAddAllOpenFilesCommand(context: vscode.ExtensionContext) {
   const cmd = vscode.commands.registerCommand(
     'localAIAssistant.addAllOpenFiles',
     async () => {
-      await addAllOpenEditorsToContext();
+      await addAllOpenEditorsToScope();
     }
   );
   context.subscriptions.push(cmd);
@@ -310,7 +312,7 @@ function registerClearContextCommand(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(cmd);
 }
-//Context - add current file
+//Context - add current file 
 function registerAddCurrentFileCommand(context: vscode.ExtensionContext) {
   const cmd = vscode.commands.registerCommand(
     'localAIAssistant.addCurrentFile',
@@ -321,6 +323,22 @@ function registerAddCurrentFileCommand(context: vscode.ExtensionContext) {
         // no notification needed — UI updates directly
       } else {
         vscode.window.showWarningMessage('No code editor available to add.');
+      }
+    }
+  );
+  context.subscriptions.push(cmd);
+}
+
+//Scope - add all workspace files
+function registerAddWorkspaceScopeCommand(context: vscode.ExtensionContext) {
+  const cmd = vscode.commands.registerCommand(
+    'localAIAssistant.addAllWorkspaceFiles',
+    async () => {
+      try {
+        const count = await addWorkspaceFilesToScope();
+        vscode.window.showInformationMessage(`Added ${count} files to workspace scope.`);
+      } catch (err) {
+        vscode.window.showErrorMessage('Failed to add workspace files to scope.');
       }
     }
   );
